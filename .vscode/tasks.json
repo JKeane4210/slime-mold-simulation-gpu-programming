@@ -1,0 +1,15 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "sample",
+            "type": "shell",
+            "command": "nvcc -g -G ~/source/final-project/slime.cu -o ~/build/final-project/slime_debug",
+            "problemMatcher": ["$nvcc"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}

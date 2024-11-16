@@ -1,0 +1,17 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "CUDA C++: Launch",
+            "type": "cuda-gdb",
+            "request": "launch",
+            "program": "~/build/final-project/slime_debug",
+            "miDebuggerPath" : "/usr/local/cuda/bin/cuda-gdb"
+        }
+    ]
+    // Reminder: Run CMake from your lab-n subdirectory of the build folder: cmake ~/source/lab-n/.
+    // If successful then this should generate a Makefile
+}

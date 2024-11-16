@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "random": "cpp",
+        "algorithm": "cpp",
+        "cmath": "cpp",
+        "ios": "cpp",
+        "chrono": "cpp",
+        "limits": "cpp"
+    }
+}
