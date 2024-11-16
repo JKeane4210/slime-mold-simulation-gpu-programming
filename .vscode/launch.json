@@ -9,7 +9,7 @@
             "type": "cuda-gdb",
             "request": "launch",
             "program": "~/build/final-project/slime_debug",
-            "miDebuggerPath" : "/usr/local/cuda/bin/cuda-gdb"
+            "miDebuggerPath" : "/usr/bin/cuda-gdb"
         }
     ]
     // Reminder: Run CMake from your lab-n subdirectory of the build folder: cmake ~/source/lab-n/.

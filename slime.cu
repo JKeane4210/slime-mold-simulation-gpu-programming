@@ -19,8 +19,8 @@
 #define SO 9 // pixel(s) = sensor offset (original = 9)
 #define SW 1 // pixel(s) = sensor width
 #define SS 1 // pixel(s) = step size
-#define depT 20 // how much chemoattractant is deposited (original = 5)
-#define decayT 0.5 // decay rate of chemoattractant
+#define depT 5 // how much chemoattractant is deposited (original = 5)
+#define decayT 0.1 // decay rate of chemoattractant
 #define ENV_WIDTH 400
 #define ENV_HEIGHT 300
 
@@ -192,7 +192,7 @@ int main(int argc, char* argv[]) {
             motor_stage_cpu(&particles[i]);
         decay_chemoattractant();
         
-        sprintf(buffer, "./source/final-project/frames/frame_%d.ppm", step);
+        sprintf(buffer, "./Desktop/Projects/slime-mold-simulation-gpu-programming/frames/frame_%d.ppm", step);
         gray_scale_image_to_file(buffer);
     }
 
