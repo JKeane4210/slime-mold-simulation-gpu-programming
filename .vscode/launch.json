@@ -8,6 +8,7 @@
             "name": "CUDA C++: Launch",
             "type": "cuda-gdb",
             "request": "launch",
+            // "program": "~/Desktop/Projects/slime-mold-simulation-gpu-programming/test_slime",
             "program": "~/build/final-project/slime_debug",
             "miDebuggerPath" : "/usr/bin/cuda-gdb"
         }

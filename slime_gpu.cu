@@ -9,8 +9,10 @@
 // CUDA runtime
 #include <cuda_runtime.h>
 #include <cuda_profiler_api.h>
+#include <curand_kernel.h>
 
 #define BLOCK_SIZE 32
+#define BLOCK_SIZE_PARTICLE 512
 #define DEBUG_LEVEL 0
 #define HARD_FAIL false
 
@@ -25,12 +27,13 @@
 #define ENV_HEIGHT 300
 
 // float env[ENV_HEIGHT][ENV_WIDTH];
-bool occupied[ENV_HEIGHT][ENV_WIDTH];
+// bool occupied[ENV_HEIGHT][ENV_WIDTH];
 
 struct SlimeParticle {
     float x;
     float y;
     float orientation;
+    curandState_t rng;
 };
 
 #define MASK_WIDTH 3    
@@ -44,6 +47,30 @@ static void HandleError(cudaError_t err, const char *file, int line ) {
 }
     
 #define HANDLE_ERROR(err) (HandleError( err, __FILE__, __LINE__ ))
+
+// LEARNING POINT - If I am trying to initialize randomly for each point and synchronize,
+// it seems like this will be a very difficult task. I can think of it however as every pixel
+// having a probability of being taken and then I might get closer to what I am looking for
+
+__global__ 
+void init_particle_kernel(SlimeParticle * particles, int n, int * occupied, int w, int h) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    if (i < n) {
+        curandState_t state;
+        curand_init(i, 0, 0, &state); // Initialize the generator
+        int rx = ((int)ceilf(curand_uniform(&state) * w)) - 1;
+        int ry = ((int)ceilf(curand_uniform(&state) * h)) - 1;
+        float r_theta = curand_uniform(&state) * 2 * M_PI;
+        while (atomicAdd(&(occupied[ry * w + rx]), 1) != 0) {
+            rx = ((int)ceilf(curand_uniform(&state) * w)) - 1;
+            ry = ((int)ceilf(curand_uniform(&state) * h)) - 1;
+        }
+        particles[i].x = (float)rx;
+        particles[i].y = (float)ry;
+        particles[i].orientation = r_theta;
+        particles[i].rng = state;
+    }
+}
 
 void report_kernel_benchmark(const char * kernel_name, cudaEvent_t start, cudaEvent_t stop) {
     float benchmark_ms = 0;
@@ -67,7 +94,7 @@ float sample_chemoattractant(SlimeParticle* p, float * env, int w, int h, float 
     if (s_y >= 0 && s_y < ENV_HEIGHT && s_x >= 0 && s_x < ENV_WIDTH)
         return env[s_y * w + s_x];
     else
-        p->orientation += ((float)rand() / (float)RAND_MAX) * M_PI_2 + M_PI_4; // keep it in bounds
+        p->orientation += curand_uniform(&(p->rng)) * M_PI_2 + M_PI_4; // keep it in bounds
         if (p->orientation > 2 * M_PI) p->orientation -= 2 * M_PI;
         return 0;
 }
@@ -76,13 +103,13 @@ __global__
 void sensor_stage_kernel(SlimeParticle * particles, int n, float * env, int w, int h, float sensor_angle, float rotation_angle) {
     int i = blockDim.x * blockIdx.x + threadIdx.x;
     if (i < n) {
-        SlimeParticle * p  = &particles[i];
+        SlimeParticle * p = &particles[i];
         float F = sample_chemoattractant(p, env, w, h, 0, SO);
         float FR = sample_chemoattractant(p, env, w, h, -sensor_angle, SO);
         float FL = sample_chemoattractant(p, env, w, h, sensor_angle, SO);
         if ((F > FL) && (F > FR)) return;
         else if ((F < FL) && (F < FR)) {
-            int random_sign = rand() % 2;
+            int random_sign = (int)(ceilf(curand_uniform(&(p->rng)) * 2)) - 1;
             p->orientation += (random_sign ? 1 : -1) * rotation_angle;
         } else if (FL < FR) {
             p->orientation -= rotation_angle;
@@ -95,21 +122,24 @@ void sensor_stage_kernel(SlimeParticle * particles, int n, float * env, int w, i
 }
 
 __global__
-void motor_stage_kernel(SlimeParticle * particles, int n, float * env, int w, int h, float sensor_angle, float rotation_angle) {
+void motor_stage_kernel(SlimeParticle * particles, int n, float * env, int * occupied, int w, int h, float sensor_angle, float rotation_angle) {
     int i = blockDim.x * blockIdx.x + threadIdx.x;
     if (i < n) {
         SlimeParticle * p = &particles[i];
         float n_x = p->x + cos(p->orientation) * SS;
         float n_y = p->y + sin(p->orientation) * SS;
-        if (!occupied[(int)round(n_y)][(int)round(n_x)]) {
-            occupied[(int)round(p->y)][(int)round(p->x)] = false;
-            occupied[(int)round(n_y)][(int)round(n_x)] = true;
+        int p_x_i = (int)round(p->x);
+        int p_y_i = (int)round(p->y);
+        int n_x_i = (int)round(n_x);
+        int n_y_i = (int)round(n_y);
+        if (atomicAdd(&(occupied[n_y_i * w + n_x_i]), 1) == 0) { // not occupied
+            atomicExch(&(occupied[p_y_i * w + p_x_i]), 0); // clear previous location
             p->x = n_x;
             p->y = n_y;
-            if ((int)round(p->y) < h && (int)round(p->y) >= 0 && (int)round(p->x) < w && (int)round(p->x) >= 0)
-                env[(int)round(p->y) * w + (int)round(p->x)] += depT; // deposit trail in new location
+            if (p_y_i < h && p_y_i >= 0 && p_x_i < w && p_x_i >= 0)
+                atomicAdd(&(env[p_y_i * w + p_x_i]), depT); // deposit trail in new location
         } else {
-            p->orientation += ((float)rand() / (float)RAND_MAX) * M_PI_2 - M_PI_4; // choose random new orientation
+            p->orientation += curand_uniform(&(p->rng)) * M_PI_2 - M_PI_4; // choose random new orientation
             if (p->orientation < 0) p->orientation += 2 * M_PI;
             if (p->orientation > 2 * M_PI) p->orientation -= 2 * M_PI;
         }
@@ -125,8 +155,8 @@ void decay_chemoattractant_kernel(float * env, int w, int h) {
     }
 }
 
-void gray_scale_image_to_file(const char *cpu_output_file) {
-    printf("Filename: %s\n", cpu_output_file);
+void gray_scale_image_to_file(const char *cpu_output_file, float * env) {
+    // printf("Filename: %s\n", cpu_output_file);
     
     FILE *output_file_handle = fopen(cpu_output_file, "w");
     if (output_file_handle == NULL) {
@@ -142,18 +172,66 @@ void gray_scale_image_to_file(const char *cpu_output_file) {
     {
         for (int j = 0; j < ENV_WIDTH; ++j)
         {
-            // fputc((int)(min(255.0, env[i][j])), output_file_handle); // TODO
+            fputc((int)(min(255.0, env[i * ENV_WIDTH + j])), output_file_handle); // TODO
         }
     }
     fflush(output_file_handle);
     fclose(output_file_handle);
 }
 
+// __global__
+// void test_kernel() {
+//     int i = blockIdx.x * blockDim.x + threadIdx.x;
+//     int test = 0;
+//     printf("r1: %d\n", atomicAdd(&test, 1));
+//     printf("r2: %d\n", atomicAdd(&test, 1));
+//     printf("%d\n", test);
+// }
+
 int main(int argc, char* argv[]) {
-    srand(time(NULL));
+    int * occupied_d;
+    HANDLE_ERROR(cudaMalloc((void **)&occupied_d, ENV_WIDTH * ENV_HEIGHT * sizeof(int)));
+    HANDLE_ERROR(cudaMemset(occupied_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(int)));
+
+    float * env_d;
+    float * env_h = (float *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(float));
+    HANDLE_ERROR(cudaMalloc((void **)&env_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
+    HANDLE_ERROR(cudaMemset(env_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
 
     const int N_PARTICLES = 1600;
-    SlimeParticle particles[N_PARTICLES];
+    SlimeParticle* particles_d;
+    HANDLE_ERROR(cudaMalloc((void **)&particles_d, N_PARTICLES * sizeof(SlimeParticle)));
+    printf("Dims: %d %d\n", (N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE);
+    init_particle_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, occupied_d, ENV_WIDTH, ENV_HEIGHT);
+    HANDLE_ERROR( cudaPeekAtLastError() );
+    HANDLE_ERROR( cudaDeviceSynchronize() );
+
+    // debug because dgb is being weird
+    // SlimeParticle* particles_h = (SlimeParticle *)malloc(N_PARTICLES * sizeof(SlimeParticle));
+    // HANDLE_ERROR(cudaMemcpy(particles_h, particles_d, N_PARTICLES * sizeof(SlimeParticle), cudaMemcpyDeviceToHost));
+    // printf("Size: %lu\n", N_PARTICLES * sizeof(SlimeParticle));
+    // for (int i = 0; i < N_PARTICLES; ++i) {
+    //     printf("Particle: %.2f, %.2f @ %.3f\n", particles_h[i].x, particles_h[i].y, particles_h[i].orientation);
+    // }
+
+    char buffer[300];
+    const int N_STEPS = 1000;
+    for (int i = 0; i < N_STEPS; ++i) {
+        sensor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, ENV_WIDTH, ENV_HEIGHT, SA, RA);
+        motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA);
+        dim3 dg((ENV_WIDTH - 1) / BLOCK_SIZE + 1, (ENV_WIDTH - 1) / BLOCK_SIZE + 1, 1);
+        dim3 db(32, 32, 1);
+        decay_chemoattractant_kernel<<<dg, db>>>(env_d, ENV_WIDTH, ENV_HEIGHT);
+        cudaMemcpy(env_h, env_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float), cudaMemcpyDeviceToHost);
+        sprintf(buffer, "./Desktop/Projects/slime-mold-simulation-gpu-programming/frames/frame_%d.ppm", i);
+        gray_scale_image_to_file(buffer, env_h);
+    }
+
+    HANDLE_ERROR(cudaFree(particles_d));
+    HANDLE_ERROR(cudaFree(env_d));
+    HANDLE_ERROR(cudaFree(occupied_d));
+
+    printf("Done!\n");
     
     // init environment
     // for (int i = 0; i < ENV_HEIGHT; ++i) {
