@@ -214,14 +214,17 @@ int main(int argc, char* argv[]) {
     //     printf("Particle: %.2f, %.2f @ %.3f\n", particles_h[i].x, particles_h[i].y, particles_h[i].orientation);
     // }
 
+    dim3 dg((ENV_WIDTH - 1) / BLOCK_SIZE + 1, (ENV_WIDTH - 1) / BLOCK_SIZE + 1, 1);
+    dim3 db(32, 32, 1);
     char buffer[300];
     const int N_STEPS = 1000;
     for (int i = 0; i < N_STEPS; ++i) {
+        // update step
         sensor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, ENV_WIDTH, ENV_HEIGHT, SA, RA);
         motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA);
-        dim3 dg((ENV_WIDTH - 1) / BLOCK_SIZE + 1, (ENV_WIDTH - 1) / BLOCK_SIZE + 1, 1);
-        dim3 db(32, 32, 1);
         decay_chemoattractant_kernel<<<dg, db>>>(env_d, ENV_WIDTH, ENV_HEIGHT);
+        
+        // save image to file
         cudaMemcpy(env_h, env_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float), cudaMemcpyDeviceToHost);
         sprintf(buffer, "./Desktop/Projects/slime-mold-simulation-gpu-programming/frames/frame_%d.ppm", i);
         gray_scale_image_to_file(buffer, env_h);
