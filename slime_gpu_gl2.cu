@@ -311,11 +311,17 @@ void computeFPS()
 
     if (fpsCount == fpsLimit)
     {
-        avgFPS = 1.0f / (sdkGetAverageTimerValue(&timer) / 1000.0f);
+        avgFPS = 1.0f / (sdkGetTimerValue(&timer) / 1000.0f);
         fpsCount = 0;
         fpsLimit = (int)MAX(avgFPS, 1.0f);
         sdkResetTimer(&timer);
     }
+
+    char fps[256];
+    sprintf(fps,
+            "CUDA Slime Mold Simulation: "
+            "%3.1f fps", avgFPS);
+    glutSetWindowTitle(fps);
 }
 
 void display()
@@ -340,7 +346,6 @@ void display()
     // HANDLE_ERROR(cudaPeekAtLastError());
 
     HANDLE_ERROR(cudaGraphicsUnmapResources(1, &cuda_pbo_resource, 0));
-    HANDLE_ERROR(cudaDeviceSynchronize());
 
     // if want to save a frame to .ppm
     // cudaMemcpy((unsigned char *)h_result, (unsigned char *)d_result,
@@ -385,6 +390,7 @@ void display()
     sdkStopTimer(&timer);
 
     computeFPS();
+    HANDLE_ERROR(cudaDeviceSynchronize());
 }
 
 // shader for displaying floating-point texture
