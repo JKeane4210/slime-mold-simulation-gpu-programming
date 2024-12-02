@@ -16,25 +16,29 @@
 #include "libs/helper_timer.h"
 #include "libs/helper_image.h"
 #include "libs/helper_string.h"
+#include "libs/helper_cuda.h"
 
 // OpenGL libraries
 #include <GL/freeglut.h>
 #include <cuda_gl_interop.h>
 
 #define BLOCK_SIZE 32
-#define BLOCK_SIZE_PARTICLE 512
+#define BLOCK_SIZE_PARTICLE 256
 #define DEBUG_LEVEL 0
 #define HARD_FAIL false
 
-#define RA M_PI / 4 // = rotation angle
+#define RA M_PI / 8 // = rotation angle
 #define SA M_PI / 4 // = sensor angle
 #define SO 9        // pixel(s) = sensor offset (original = 9)
 #define SW 1        // pixel(s) = sensor width
 #define SS 1        // pixel(s) = step size
 #define depT 20     // how much chemoattractant is deposited (original = 5)
 #define decayT 0.5  // decay rate of chemoattractant
-#define ENV_WIDTH 400
-#define ENV_HEIGHT 300
+#define ENV_WIDTH 1000
+#define ENV_HEIGHT 1000
+#define N_PARTICLES 100000
+#define DISPLAY_WIDTH 400
+#define DISPLAY_HEIGHT 400
 
 #define REFRESH_DELAY 10 // ms
 
@@ -53,6 +57,29 @@ void display();
 
 StopWatchInterface *timer;
 StopWatchInterface *kernel_timer;
+
+unsigned int *img_host;
+unsigned int *img_device;
+unsigned int *tmp_img_device;
+
+SlimeParticle *particles_d;
+int *occupied_d;
+float *env_h;
+float *env_d;
+
+dim3 dg((ENV_WIDTH - 1) / BLOCK_SIZE + 1, (ENV_WIDTH - 1) / BLOCK_SIZE + 1, 1);
+dim3 db(32, 32, 1);
+
+unsigned int frameCount = 0;
+unsigned int fpsCount = 0;
+unsigned int fpsLimit = 8;
+float avgFPS = 0.0f;
+
+// what is a PBO? -> pixel buffer object
+cudaGraphicsResource *cuda_pbo_resource;
+GLuint pbo;
+GLuint texture_id;
+GLuint shader;
 
 // handle error macro
 inline void HandleError(cudaError_t err, const char *file, const int line)
@@ -181,7 +208,7 @@ __global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, 
     }
 }
 
-__global__ void decay_chemoattractant_kernel(float *env, uint * result, int w, int h)
+__global__ void decay_chemoattractant_kernel(float *env, uint *result, int w, int h)
 {
     int col = blockDim.x * blockIdx.x + threadIdx.x;
     int row = blockDim.y * blockIdx.y + threadIdx.y;
@@ -191,95 +218,12 @@ __global__ void decay_chemoattractant_kernel(float *env, uint * result, int w, i
         env[row * w + col] = value;
         value = min(value, 255.0);
         result[row * w + col] = (255u << 24) |
-            ((unsigned int)(value) << 16) |
-            ((unsigned int)(value) << 8) |
-            ((unsigned int)(value));
+                                ((unsigned int)(value) << 16) |
+                                ((unsigned int)(value) << 8) |
+                                ((unsigned int)(value));
+        // unsigned int test_val = value > 0 ? 0xffu : 0x00u;
+        // result[row * w  + col] = (255u << 24) | (test_val << 16) | (test_val << 8) | (test_val);
     }
-}
-
-void gray_scale_image_to_file(const char *cpu_output_file, float *env)
-{
-    // printf("Filename: %s\n", cpu_output_file);
-
-    FILE *output_file_handle = fopen(cpu_output_file, "w");
-    if (output_file_handle == NULL)
-    {
-        // Print a descriptive error message
-        perror("Error opening file");
-
-        // Alternatively, use strerror to get the error message
-        printf("fopen failed: %s\n", strerror(errno));
-        return;
-    }
-    fprintf(output_file_handle, "%s\n#\n%d %d\n%d\n", "P5", ENV_WIDTH, ENV_HEIGHT, 255);
-    for (int i = 0; i < ENV_HEIGHT; ++i)
-    {
-        for (int j = 0; j < ENV_WIDTH; ++j)
-        {
-            fputc((int)(min(255.0, env[i * ENV_WIDTH + j])), output_file_handle); // TODO
-        }
-    }
-    fflush(output_file_handle);
-    fclose(output_file_handle);
-}
-
-cudaArray *device_array;
-cudaArray *device_tmp_array;
-cudaTextureObject_t rgba_texture_object;
-cudaTextureObject_t rgba_tmp_texture_object;
-
-void initTexture(int width, int height, void *pImage)
-{
-    // RGBA channel setup
-    cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned);
-
-    // allocate CUDA array
-    HANDLE_ERROR(cudaMallocArray(&device_array, &channelDesc, width, height));
-    HANDLE_ERROR(cudaMallocArray(&device_tmp_array, &channelDesc, width, height));
-
-    // copy image over to array (but I don't have an image)
-    // HANDLE_ERROR(cudaMemcpy2DToArray(device_array, 0, 0, pImage, width * sizeof(uchar4), width * sizeof(uchar4), height, cudaMemcpyHostToDevice));
-
-    // setting up a texture resource and descriptor
-    cudaResourceDesc texture_resource;
-    cudaTextureDesc texture_descriptor;
-
-    memset(&texture_resource, 0, sizeof(cudaResourceDesc));
-    texture_resource.resType = cudaResourceTypeArray;
-    texture_resource.res.array.array = device_array;
-
-    memset(&texture_descriptor, 0, sizeof(cudaTextureDesc));
-    texture_descriptor.normalizedCoords = false;               // what does this mean?
-    texture_descriptor.filterMode = cudaFilterModeLinear;      // what does this mean?
-    texture_descriptor.addressMode[0] = cudaAddressModeWrap;   // what does this mean?
-    texture_descriptor.addressMode[1] = cudaAddressModeWrap;   // what does this mean?
-    texture_descriptor.readMode = cudaReadModeNormalizedFloat; // what does this mean?
-
-    // create the texture object (uses the resource and descriptor)
-    HANDLE_ERROR(cudaCreateTextureObject(&rgba_texture_object, &texture_resource, &texture_descriptor, NULL));
-
-    // resetting texture resource and descriptor
-    memset(&texture_resource, 0, sizeof(cudaResourceDesc));
-    texture_resource.resType = cudaResourceTypeArray;
-    texture_resource.res.array.array = device_tmp_array;
-
-    memset(&texture_descriptor, 0, sizeof(cudaTextureDesc));
-    texture_descriptor.normalizedCoords = false;               // what does this mean?
-    texture_descriptor.filterMode = cudaFilterModeLinear;      // what does this mean?
-    texture_descriptor.addressMode[0] = cudaAddressModeWrap;   // what does this mean?
-    texture_descriptor.addressMode[1] = cudaAddressModeWrap;   // what does this mean?
-    texture_descriptor.readMode = cudaReadModeNormalizedFloat; // what does this mean?
-
-    // create the temporary texture object (uses the resource and descriptor)
-    HANDLE_ERROR(cudaCreateTextureObject(&rgba_tmp_texture_object, &texture_resource, &texture_descriptor, NULL));
-}
-
-void freeTextures()
-{
-    HANDLE_ERROR(cudaDestroyTextureObject(rgba_texture_object));
-    HANDLE_ERROR(cudaDestroyTextureObject(rgba_tmp_texture_object));
-    HANDLE_ERROR(cudaFreeArray(device_array));
-    HANDLE_ERROR(cudaFreeArray(device_tmp_array));
 }
 
 // Keyboard callback function for OpenGL (GLUT)
@@ -324,40 +268,15 @@ void initGL(int *argc, char **argv)
 {
     // initialize GLUT
     glutInit(argc, argv);
-    glutInitDisplayMode(GLUT_RGBA); // only allow RGBA (can | GLUT_FLOAT to get other)
-    glutInitWindowSize(768, 768);
+    glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE); // only allow RGBA (can | GLUT_FLOAT to get other)
+    glutInitWindowSize(DISPLAY_WIDTH, DISPLAY_HEIGHT);
     glutCreateWindow("CUDA Slime Mold Simulation");
     glutDisplayFunc(display);
 
     glutKeyboardFunc(keyboard);
     glutReshapeFunc(reshape);
     glutTimerFunc(REFRESH_DELAY, timerEvent, 0);
-
-    // if (!isGLVersionSupported(2, 0) ||
-    //     !areGLExtensionsSupported(
-    //         "GL_ARB_vertex_buffer_object GL_ARB_pixel_buffer_object"))
-    // {
-    //     printf("Error: failed to get minimal extensions for demo\n");
-    //     printf("This sample requires:\n");
-    //     printf("  OpenGL version 2.0\n");
-    //     printf("  GL_ARB_vertex_buffer_object\n");
-    //     printf("  GL_ARB_pixel_buffer_object\n");
-    //     exit(EXIT_FAILURE);
-    // }
 }
-
-unsigned int *img_host;
-unsigned int *img_device;
-unsigned int *tmp_img_device;
-
-SlimeParticle *particles_d;
-int *occupied_d;
-float *env_h;
-float *env_d;
-
-#define N_PARTICLES 1600
-dim3 dg((ENV_WIDTH - 1) / BLOCK_SIZE + 1, (ENV_WIDTH - 1) / BLOCK_SIZE + 1, 1);
-dim3 db(32, 32, 1);
 
 void initCuda()
 {
@@ -367,32 +286,22 @@ void initCuda()
     HANDLE_ERROR(cudaMalloc((void **)&occupied_d, ENV_WIDTH * ENV_HEIGHT * sizeof(int)));
     HANDLE_ERROR(cudaMemset(occupied_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(int)));
 
+    // creating environment
     env_h = (float *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(float));
     HANDLE_ERROR(cudaMalloc((void **)&env_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
     HANDLE_ERROR(cudaMemset(env_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
 
-    // const int N_PARTICLES = 1600;
+    // creating array of particles
     HANDLE_ERROR(cudaMalloc((void **)&particles_d, N_PARTICLES * sizeof(SlimeParticle)));
     printf("Dims: %d %d\n", (N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE);
     init_particle_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, occupied_d, ENV_WIDTH, ENV_HEIGHT);
     HANDLE_ERROR(cudaPeekAtLastError());
     HANDLE_ERROR(cudaDeviceSynchronize());
 
-    HANDLE_ERROR(cudaFree(particles_d));
-    HANDLE_ERROR(cudaFree(env_d));
-    HANDLE_ERROR(cudaFree(occupied_d));
-
-    initTexture(ENV_WIDTH, ENV_HEIGHT, img_host);
-
     // creating timers
     sdkCreateTimer(&timer);
     sdkCreateTimer(&kernel_timer);
 }
-
-unsigned int frameCount = 0;
-unsigned int fpsCount = 0;
-unsigned int fpsLimit = 8;
-float avgFPS = 0.0f;
 
 // Calculate the Frames per second and print in the title bar
 void computeFPS()
@@ -409,12 +318,6 @@ void computeFPS()
     }
 }
 
-// what is a PBO?
-cudaGraphicsResource *cuda_pbo_resource;
-GLuint pbo;
-GLuint texture_id;
-GLuint shader;
-
 void display()
 {
     sdkStartTimer(&timer);
@@ -427,15 +330,22 @@ void display()
     HANDLE_ERROR(cudaGraphicsResourceGetMappedPointer(
         (void **)&d_result, &num_bytes, cuda_pbo_resource)); // should come back saying ENV_WIDTH * ENV_HEIGHT * 4 bytes
     // printf("Bytes accessible: %zu\n", num_bytes);
-    // boxFilterRGBA(d_img, d_temp, d_result, ENV_WIDTH, ENV_HEIGHT, filter_radius,
-    //               iterations, nthreads, kernel_timer);
 
     // update step
     sensor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, ENV_WIDTH, ENV_HEIGHT, SA, RA);
+    // HANDLE_ERROR(cudaPeekAtLastError());
     motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA);
+    // HANDLE_ERROR(cudaPeekAtLastError());
     decay_chemoattractant_kernel<<<dg, db>>>(env_d, d_result, ENV_WIDTH, ENV_HEIGHT);
+    // HANDLE_ERROR(cudaPeekAtLastError());
 
     HANDLE_ERROR(cudaGraphicsUnmapResources(1, &cuda_pbo_resource, 0));
+    HANDLE_ERROR(cudaDeviceSynchronize());
+
+    // if want to save a frame to .ppm
+    // cudaMemcpy((unsigned char *)h_result, (unsigned char *)d_result,
+    //            ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int), cudaMemcpyDeviceToHost);
+    // sdkSavePPM4ub((const char *)"tmp.ppm", (unsigned char *)h_result, ENV_WIDTH, ENV_HEIGHT);
 
     // OpenGL display code path
     {
@@ -535,8 +445,8 @@ void initGLResources()
 void cleanup()
 {
     // deleting timers
-    //   sdkDeleteTimer(&timer);
-    //   sdkDeleteTimer(&kernel_timer);
+    sdkDeleteTimer(&timer);
+    sdkDeleteTimer(&kernel_timer);
 
     if (img_host)
     {
@@ -556,51 +466,27 @@ void cleanup()
         tmp_img_device = NULL;
     }
 
-    // Refer to boxFilter_kernel.cu for implementation
-    freeTextures();
-
     cudaGraphicsUnregisterResource(cuda_pbo_resource);
 
     glDeleteBuffers(1, &pbo);
     glDeleteTextures(1, &texture_id);
     glDeleteProgramsARB(1, &shader);
+
+    HANDLE_ERROR(cudaFree(particles_d));
+    HANDLE_ERROR(cudaFree(env_d));
+    HANDLE_ERROR(cudaFree(occupied_d));
 }
 
 int main(int argc, char *argv[])
 {
-
-    // char buffer[300];
-    // const int N_STEPS = 1000;
-    // for (int i = 0; i < N_STEPS; ++i)
-    // {
-    //     // update step
-    //     sensor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, ENV_WIDTH, ENV_HEIGHT, SA, RA);
-    //     motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA);
-    //     decay_chemoattractant_kernel<<<dg, db>>>(env_d, ENV_WIDTH, ENV_HEIGHT);
-
-    //     // save image to file
-    //     cudaMemcpy(env_h, env_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float), cudaMemcpyDeviceToHost);
-    //     sprintf(buffer, "./Desktop/Projects/slime-mold-simulation-gpu-programming/frames/frame_%d.ppm", i);
-    //     gray_scale_image_to_file(buffer, env_h);
-    // }
-
-    // printf("Done!\n");
-
-    // command: nvcc -lGL -lGLU -lglut
-
-
-    /*
-    
-        Compile Command: nvcc slime_gpu_gl2.cu -L libs -o slimeGL -lGL -lGLU -lglut
-    
-    */
-
-    // OpenGL version
+#if defined(__linux__)
+    setenv("DISPLAY", ":0", 0);
+#endif
+    findCudaDevice(argc, (const char **)argv);
     initGL(&argc, argv);
     initCuda();
     initGLResources();
     glutCloseFunc(cleanup);
     glutMainLoop();
-
     return 0;
 }
