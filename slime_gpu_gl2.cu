@@ -34,9 +34,9 @@
 #define SS 1        // pixel(s) = step size
 #define depT 20     // how much chemoattractant is deposited (original = 5)
 #define decayT 0.5  // decay rate of chemoattractant
-#define ENV_WIDTH 1000
-#define ENV_HEIGHT 1000
-#define N_PARTICLES 100000
+#define ENV_WIDTH 2560
+#define ENV_HEIGHT 1440
+#define N_PARTICLES 1000000
 #define DISPLAY_WIDTH 400
 #define DISPLAY_HEIGHT 400
 
