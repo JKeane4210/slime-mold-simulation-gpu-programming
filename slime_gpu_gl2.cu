@@ -22,6 +22,12 @@
 #include <GL/freeglut.h>
 #include <cuda_gl_interop.h>
 
+// slime simulation kernels
+#include "slime_kernels.h"
+#include "utils.h"
+
+// #define SAVE_FRAME_PPM
+
 #define BLOCK_SIZE 32
 #define BLOCK_SIZE_PARTICLE 256
 #define DEBUG_LEVEL 0
@@ -34,26 +40,23 @@
 #define SS 1        // pixel(s) = step size
 #define depT 20     // how much chemoattractant is deposited (original = 5)
 #define decayT 0.5  // decay rate of chemoattractant
-#define ENV_WIDTH 2560
-#define ENV_HEIGHT 1440
-#define N_PARTICLES 1000000
-#define DISPLAY_WIDTH 400
-#define DISPLAY_HEIGHT 400
-
+#define ENV_WIDTH 2000
+#define ENV_HEIGHT 1000
+#define N_PARTICLES 100000
+#define DISPLAY_WIDTH 1400
+#define DISPLAY_HEIGHT 800
 #define REFRESH_DELAY 10 // ms
 
-struct SlimeParticle
-{
-    float x;
-    float y;
-    float orientation;
-    curandState_t rng;
-};
-
-#define MASK_WIDTH 3
-__constant__ float K[MASK_WIDTH][MASK_WIDTH];
-
 void display();
+void keyboard(unsigned char key, int /*x*/, int /*y*/);
+void reshape(int x, int y);
+void timerEvent(int value);
+void initGL(int *argc, char **argv);
+void initCuda();
+void computeFPS();
+GLuint compileASMShader(GLenum program_type, const char *code);
+void initGLResources();
+void cleanup();
 
 StopWatchInterface *timer;
 StopWatchInterface *kernel_timer;
@@ -80,151 +83,6 @@ cudaGraphicsResource *cuda_pbo_resource;
 GLuint pbo;
 GLuint texture_id;
 GLuint shader;
-
-// handle error macro
-inline void HandleError(cudaError_t err, const char *file, const int line)
-{
-    if (err != cudaSuccess)
-    {
-        printf("%s in %s at line %d\n", cudaGetErrorString(err), file, line);
-    }
-}
-
-#define HANDLE_ERROR(err) (HandleError(err, __FILE__, __LINE__))
-
-__global__ void init_particle_kernel(SlimeParticle *particles, int n, int *occupied, int w, int h)
-{
-    int i = blockDim.x * blockIdx.x + threadIdx.x;
-    if (i < n)
-    {
-        curandState_t state;
-        curand_init(i, 0, 0, &state); // Initialize the generator
-        int rx = ((int)ceilf(curand_uniform(&state) * w)) - 1;
-        int ry = ((int)ceilf(curand_uniform(&state) * h)) - 1;
-        float r_theta = curand_uniform(&state) * 2 * M_PI;
-        while (atomicAdd(&(occupied[ry * w + rx]), 1) != 0)
-        {
-            rx = ((int)ceilf(curand_uniform(&state) * w)) - 1;
-            ry = ((int)ceilf(curand_uniform(&state) * h)) - 1;
-        }
-        particles[i].x = (float)rx;
-        particles[i].y = (float)ry;
-        particles[i].orientation = r_theta;
-        particles[i].rng = state;
-    }
-}
-
-void report_kernel_benchmark(const char *kernel_name, cudaEvent_t start, cudaEvent_t stop)
-{
-    float benchmark_ms = 0;
-    cudaEventSynchronize(stop);                       // wait for the stop event, if it isn’t done
-    cudaEventElapsedTime(&benchmark_ms, start, stop); // get the elapsed time
-    printf("- Kernel: %s, Benchmark(ms): %f\n", kernel_name, benchmark_ms);
-}
-
-// elapsed time in milliseconds
-float cpu_time(timespec *start, timespec *end)
-{
-    return ((1e9 * end->tv_sec + end->tv_nsec) - (1e9 * start->tv_sec + start->tv_nsec)) / 1e6;
-}
-
-__device__ float sample_chemoattractant(SlimeParticle *p, float *env, int w, int h, float rotation_offset, float sensor_offset)
-{
-    float angle = p->orientation + rotation_offset;
-    if (angle < 0)
-        angle += 2 * M_PI;
-    if (angle > 2 * M_PI)
-        angle -= 2 * M_PI;
-    int s_x = (int)round(p->x + sensor_offset * cos(angle));
-    int s_y = (int)round(p->y + sensor_offset + sin(angle));
-    if (s_y >= 0 && s_y < ENV_HEIGHT && s_x >= 0 && s_x < ENV_WIDTH)
-        return env[s_y * w + s_x];
-    else
-        p->orientation += curand_uniform(&(p->rng)) * M_PI_2 + M_PI_4; // keep it in bounds
-    if (p->orientation > 2 * M_PI)
-        p->orientation -= 2 * M_PI;
-    return 0;
-}
-
-__global__ void sensor_stage_kernel(SlimeParticle *particles, int n, float *env, int w, int h, float sensor_angle, float rotation_angle)
-{
-    int i = blockDim.x * blockIdx.x + threadIdx.x;
-    if (i < n)
-    {
-        SlimeParticle *p = &particles[i];
-        float F = sample_chemoattractant(p, env, w, h, 0, SO);
-        float FR = sample_chemoattractant(p, env, w, h, -sensor_angle, SO);
-        float FL = sample_chemoattractant(p, env, w, h, sensor_angle, SO);
-        if ((F > FL) && (F > FR))
-            return;
-        else if ((F < FL) && (F < FR))
-        {
-            int random_sign = (int)(ceilf(curand_uniform(&(p->rng)) * 2)) - 1;
-            p->orientation += (random_sign ? 1 : -1) * rotation_angle;
-        }
-        else if (FL < FR)
-        {
-            p->orientation -= rotation_angle;
-        }
-        else if (FR < FL)
-        {
-            p->orientation += rotation_angle;
-        }
-        if (p->orientation < 0)
-            p->orientation += 2 * M_PI;
-        if (p->orientation > 2 * M_PI)
-            p->orientation -= 2 * M_PI;
-    }
-}
-
-__global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, int *occupied, int w, int h, float sensor_angle, float rotation_angle)
-{
-    int i = blockDim.x * blockIdx.x + threadIdx.x;
-    if (i < n)
-    {
-        SlimeParticle *p = &particles[i];
-        float n_x = p->x + cos(p->orientation) * SS;
-        float n_y = p->y + sin(p->orientation) * SS;
-        int p_x_i = (int)round(p->x);
-        int p_y_i = (int)round(p->y);
-        int n_x_i = (int)round(n_x);
-        int n_y_i = (int)round(n_y);
-        if (atomicAdd(&(occupied[n_y_i * w + n_x_i]), 1) == 0)
-        {                                                  // not occupied
-            atomicExch(&(occupied[p_y_i * w + p_x_i]), 0); // clear previous location
-            p->x = n_x;
-            p->y = n_y;
-            if (p_y_i < h && p_y_i >= 0 && p_x_i < w && p_x_i >= 0)
-                atomicAdd(&(env[p_y_i * w + p_x_i]), depT); // deposit trail in new location
-        }
-        else
-        {
-            p->orientation += curand_uniform(&(p->rng)) * M_PI_2 - M_PI_4; // choose random new orientation
-            if (p->orientation < 0)
-                p->orientation += 2 * M_PI;
-            if (p->orientation > 2 * M_PI)
-                p->orientation -= 2 * M_PI;
-        }
-    }
-}
-
-__global__ void decay_chemoattractant_kernel(float *env, uint *result, int w, int h)
-{
-    int col = blockDim.x * blockIdx.x + threadIdx.x;
-    int row = blockDim.y * blockIdx.y + threadIdx.y;
-    if (col < w && col >= 0 && row < h && row >= 0)
-    {
-        float value = max(env[row * w + col] - decayT, 0.0);
-        env[row * w + col] = value;
-        value = min(value, 255.0);
-        result[row * w + col] = (255u << 24) |
-                                ((unsigned int)(value) << 16) |
-                                ((unsigned int)(value) << 8) |
-                                ((unsigned int)(value));
-        // unsigned int test_val = value > 0 ? 0xffu : 0x00u;
-        // result[row * w  + col] = (255u << 24) | (test_val << 16) | (test_val << 8) | (test_val);
-    }
-}
 
 // Keyboard callback function for OpenGL (GLUT)
 void keyboard(unsigned char key, int /*x*/, int /*y*/)
@@ -338,19 +196,19 @@ void display()
     // printf("Bytes accessible: %zu\n", num_bytes);
 
     // update step
-    sensor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, ENV_WIDTH, ENV_HEIGHT, SA, RA);
-    // HANDLE_ERROR(cudaPeekAtLastError());
-    motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA);
-    // HANDLE_ERROR(cudaPeekAtLastError());
-    decay_chemoattractant_kernel<<<dg, db>>>(env_d, d_result, ENV_WIDTH, ENV_HEIGHT);
-    // HANDLE_ERROR(cudaPeekAtLastError());
+    sensor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SO);
+    motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SS, depT);
+    decay_chemoattractant_kernel<<<dg, db>>>(env_d, occupied_d, d_result, ENV_WIDTH, ENV_HEIGHT, decayT);
+    // HANDLE_ERROR(cudaDeviceSynchronize());
 
     HANDLE_ERROR(cudaGraphicsUnmapResources(1, &cuda_pbo_resource, 0));
 
-    // if want to save a frame to .ppm
-    // cudaMemcpy((unsigned char *)h_result, (unsigned char *)d_result,
-    //            ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int), cudaMemcpyDeviceToHost);
-    // sdkSavePPM4ub((const char *)"tmp.ppm", (unsigned char *)h_result, ENV_WIDTH, ENV_HEIGHT);
+    #ifdef SAVE_FRAME_PPM
+    unsigned char * h_result;
+    cudaMemcpy((unsigned char *)h_result, (unsigned char *)d_result,
+               ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int), cudaMemcpyDeviceToHost);
+    sdkSavePPM4ub((const char *)"tmp.ppm", (unsigned char *)h_result, ENV_WIDTH, ENV_HEIGHT);
+    #endif
 
     // OpenGL display code path
     {
@@ -390,7 +248,6 @@ void display()
     sdkStopTimer(&timer);
 
     computeFPS();
-    HANDLE_ERROR(cudaDeviceSynchronize());
 }
 
 // shader for displaying floating-point texture
@@ -481,6 +338,8 @@ void cleanup()
     HANDLE_ERROR(cudaFree(particles_d));
     HANDLE_ERROR(cudaFree(env_d));
     HANDLE_ERROR(cudaFree(occupied_d));
+    free(img_host);
+    free(env_h);
 }
 
 int main(int argc, char *argv[])
