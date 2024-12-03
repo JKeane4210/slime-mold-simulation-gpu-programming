@@ -1,6 +1,6 @@
 #include "slime_kernels.h"
 
-// #define OVERLAPPING_PARTICLES
+#define OVERLAPPING_PARTICLES
 #define DISPLAY_PARTICLE_LOCATION
 // #define DISPLAY_SLIME_TRAIL
 
