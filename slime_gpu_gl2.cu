@@ -40,11 +40,12 @@
 #define SS 1        // pixel(s) = step size
 #define depT 20     // how much chemoattractant is deposited (original = 5)
 #define decayT 0.5  // decay rate of chemoattractant
-#define ENV_WIDTH 2560
-#define ENV_HEIGHT 1440
-#define N_PARTICLES 1000000
-#define DISPLAY_WIDTH 1400
-#define DISPLAY_HEIGHT 800
+#define deltaT 0.2
+#define ENV_WIDTH 1500
+#define ENV_HEIGHT 1500
+#define N_PARTICLES 800000
+#define DISPLAY_WIDTH 400
+#define DISPLAY_HEIGHT 400
 #define REFRESH_DELAY 10 // ms
 
 void display();
@@ -152,7 +153,8 @@ void initCuda()
     // creating array of particles
     HANDLE_ERROR(cudaMalloc((void **)&particles_d, N_PARTICLES * sizeof(SlimeParticle)));
     printf("Dims: %d %d\n", (N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE);
-    init_particle_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, occupied_d, ENV_WIDTH, ENV_HEIGHT);
+    init_circle_particle_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, occupied_d, ENV_WIDTH, ENV_HEIGHT);
+    // init_particle_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, occupied_d, ENV_WIDTH, ENV_HEIGHT);
     HANDLE_ERROR(cudaPeekAtLastError());
     HANDLE_ERROR(cudaDeviceSynchronize());
 
@@ -178,7 +180,8 @@ void computeFPS()
     char fps[256];
     sprintf(fps,
             "CUDA Slime Mold Simulation: "
-            "%3.1f fps", avgFPS);
+            "%3.1f fps",
+            avgFPS);
     glutSetWindowTitle(fps);
 }
 
@@ -197,18 +200,18 @@ void display()
 
     // update step
     sensor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SO);
-    motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SS, depT);
+    motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SS, depT, deltaT);
     decay_chemoattractant_kernel<<<dg, db>>>(env_d, occupied_d, d_result, ENV_WIDTH, ENV_HEIGHT, decayT);
     // HANDLE_ERROR(cudaDeviceSynchronize());
 
     HANDLE_ERROR(cudaGraphicsUnmapResources(1, &cuda_pbo_resource, 0));
 
-    #ifdef SAVE_FRAME_PPM
-    unsigned char * h_result;
+#ifdef SAVE_FRAME_PPM
+    unsigned char *h_result;
     cudaMemcpy((unsigned char *)h_result, (unsigned char *)d_result,
                ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int), cudaMemcpyDeviceToHost);
     sdkSavePPM4ub((const char *)"tmp.ppm", (unsigned char *)h_result, ENV_WIDTH, ENV_HEIGHT);
-    #endif
+#endif
 
     // OpenGL display code path
     {
