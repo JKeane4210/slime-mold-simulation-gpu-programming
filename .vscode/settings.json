@@ -5,6 +5,7 @@
         "cmath": "cpp",
         "ios": "cpp",
         "chrono": "cpp",
-        "limits": "cpp"
+        "limits": "cpp",
+        "__config": "cpp"
     }
 }
