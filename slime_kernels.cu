@@ -1,8 +1,12 @@
 #include "slime_kernels.h"
+// #include "constant_definitions.h"
+#include <stdio.h>
 
 #define OVERLAPPING_PARTICLES
 // #define DISPLAY_PARTICLE_LOCATION
 #define DISPLAY_SLIME_TRAIL
+
+// extern __constant__ float K[diffK][diffK];
 
 __global__ void init_circle_particle_kernel(SlimeParticle *particles, int n, int *occupied, int w, int h)
 {
@@ -26,7 +30,7 @@ __global__ void init_circle_particle_kernel(SlimeParticle *particles, int n, int
 #endif
         particles[i].x = (float)rx;
         particles[i].y = (float)ry;
-        particles[i].orientation = r_theta; // + M_PI;
+        particles[i].orientation = r_theta + 0 * M_PI;
         // if (particles[i].orientation > 2 * M_PI)
         //     particles[i].orientation -= 2 * M_PI;
         particles[i].rng = state;
@@ -173,4 +177,40 @@ __global__ void decay_chemoattractant_kernel(float *env, int *occupied_d, uint *
                                 ((unsigned int)(value) << 8) |
                                 ((unsigned int)(value));
     }
+}
+
+// since the paper described just a simple mean filter, I will
+// proceed without the kernel and just use weights of 1 / 9
+__global__ void diffusion_kernel(float *env, float * env_dest, int w, int h) {
+    int col = BLOCK_SIZE * blockIdx.x + threadIdx.x - DIFFUSION_KERNEL_R;
+    int row = BLOCK_SIZE * blockIdx.y + threadIdx.y - DIFFUSION_KERNEL_R;
+    __shared__ float tile_s[BLOCK_SIZE + diffK - 1][BLOCK_SIZE + diffK - 1];
+
+    if (col >= 0 && col < w && row >= 0 && row < h)
+        tile_s[threadIdx.y][threadIdx.x] = env[row * w + col];
+    else
+        tile_s[threadIdx.y][threadIdx.x] = 0.0;
+
+    __syncthreads();
+
+    // changes role of thread from data loading to loading the kernel that starts in top left corner at [threadIdx.y][threadIdx.x]
+    if (threadIdx.x < BLOCK_SIZE && threadIdx.y < BLOCK_SIZE) {
+        int dest_c = BLOCK_SIZE * blockIdx.x + threadIdx.x;
+        int dest_r = BLOCK_SIZE * blockIdx.y + threadIdx.y;
+        if (dest_c >= 0 && dest_c < w && dest_r >= 0 && dest_r < h) {
+            float result = 0.0;
+            for (int i = 0; i < diffK; ++i) {
+                for (int j = 0; j < diffK; ++j){
+                    float weight = (i == DIFFUSION_KERNEL_R && j == DIFFUSION_KERNEL_R) ? MEAN_FILTER_CENTER_WEIGHT : (((1.0 - MEAN_FILTER_CENTER_WEIGHT) / 1.8) / (3 * 3 - 1));
+                    // if (col == 0 && row == 0) {
+                    //     printf("%d %d %f %d %d %f\n", i, j, weight, diffK * diffK, diffK, (1.0 - MEAN_FILTER_CENTER_WEIGHT));
+                    // }
+                    result += weight * tile_s[threadIdx.y + i][threadIdx.x + j]; // mean kernel
+                }
+            }
+            env_dest[dest_r * w + dest_c] = result;
+        }
+    }
+    // if (col == 0 && row == 0)
+    //     printf("%f\n", K[0][0]);
 }

@@ -25,28 +25,28 @@
 // slime simulation kernels
 #include "slime_kernels.h"
 #include "utils.h"
+// #include "constant_definitions.h"
 
 // #define SAVE_FRAME_PPM
 
-#define BLOCK_SIZE 32
 #define BLOCK_SIZE_PARTICLE 256
 #define DEBUG_LEVEL 0
 #define HARD_FAIL false
 
-#define RA M_PI / 8 // = rotation angle
+#define RA M_PI / 4 // = rotation angle
 #define SA M_PI / 4 // = sensor angle
 #define SO 9        // pixel(s) = sensor offset (original = 9)
 #define SW 1        // pixel(s) = sensor width
 #define SS 1        // pixel(s) = step size
 #define depT 20     // how much chemoattractant is deposited (original = 5)
-#define decayT 0.5  // decay rate of chemoattractant
-#define deltaT 0.2
-#define ENV_WIDTH 1500
+#define decayT 0.3  // decay rate of chemoattractant
+#define deltaT 0.7
+#define ENV_WIDTH 2000
 #define ENV_HEIGHT 1500
-#define N_PARTICLES 800000
-#define DISPLAY_WIDTH 400
-#define DISPLAY_HEIGHT 400
-#define REFRESH_DELAY 10 // ms
+#define N_PARTICLES 2000000
+#define DISPLAY_WIDTH 2000
+#define DISPLAY_HEIGHT 1500
+#define REFRESH_DELAY 20 // ms
 
 void display();
 void keyboard(unsigned char key, int /*x*/, int /*y*/);
@@ -70,9 +70,13 @@ SlimeParticle *particles_d;
 int *occupied_d;
 float *env_h;
 float *env_d;
+float *env_dest_d;
+float * tmp_d;
+// __constant__ float K[diffK][diffK];
 
 dim3 dg((ENV_WIDTH - 1) / BLOCK_SIZE + 1, (ENV_WIDTH - 1) / BLOCK_SIZE + 1, 1);
-dim3 db(32, 32, 1);
+dim3 db(BLOCK_SIZE, BLOCK_SIZE, 1);
+dim3 db_diffusion(BLOCK_SIZE + diffK - 1, BLOCK_SIZE + diffK - 1, 1);
 
 unsigned int frameCount = 0;
 unsigned int fpsCount = 0;
@@ -139,9 +143,22 @@ void initGL(int *argc, char **argv)
 
 void initCuda()
 {
+    // img
     HANDLE_ERROR(cudaMalloc((void **)&img_device, ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int)));
     HANDLE_ERROR(cudaMalloc((void **)&tmp_img_device, ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int)));
 
+    // kernel
+    // float * K_h = (float *)malloc(diffK * diffK * sizeof(float));
+    // for (int i = 0; i < diffK; ++i) {
+    //     for (int j = 0; j < diffK; ++j) {
+    //         K_h[i * diffK + j] = (i == DIFFUSION_KERNEL_R && j == DIFFUSION_KERNEL_R) ? MEAN_FILTER_CENTER_WEIGHT : (1.0 - MEAN_FILTER_CENTER_WEIGHT) / (diffK * diffK - 1);
+    //         printf("%f\n", K_h[i * diffK + j]);
+    //     }
+    // }
+    // HANDLE_ERROR(cudaMemcpyToSymbol(K, K_h, diffK * diffK * sizeof(float)));
+    // free(K_h);
+    
+    // occupied
     HANDLE_ERROR(cudaMalloc((void **)&occupied_d, ENV_WIDTH * ENV_HEIGHT * sizeof(int)));
     HANDLE_ERROR(cudaMemset(occupied_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(int)));
 
@@ -149,6 +166,8 @@ void initCuda()
     env_h = (float *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(float));
     HANDLE_ERROR(cudaMalloc((void **)&env_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
     HANDLE_ERROR(cudaMemset(env_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
+    HANDLE_ERROR(cudaMalloc((void **)&env_dest_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
+    HANDLE_ERROR(cudaMemset(env_dest_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
 
     // creating array of particles
     HANDLE_ERROR(cudaMalloc((void **)&particles_d, N_PARTICLES * sizeof(SlimeParticle)));
@@ -201,8 +220,14 @@ void display()
     // update step
     sensor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SO);
     motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SS, depT, deltaT);
+    diffusion_kernel<<<dg, db_diffusion>>>(env_d, env_dest_d, ENV_WIDTH, ENV_HEIGHT);
+    // swap env_d and env_dest_d
+    tmp_d = env_d;
+    env_d = env_dest_d;
+    env_dest_d = tmp_d;
     decay_chemoattractant_kernel<<<dg, db>>>(env_d, occupied_d, d_result, ENV_WIDTH, ENV_HEIGHT, decayT);
     // HANDLE_ERROR(cudaDeviceSynchronize());
+    HANDLE_ERROR(cudaPeekAtLastError());
 
     HANDLE_ERROR(cudaGraphicsUnmapResources(1, &cuda_pbo_resource, 0));
 
@@ -251,6 +276,7 @@ void display()
     sdkStopTimer(&timer);
 
     computeFPS();
+    // exit(0);
 }
 
 // shader for displaying floating-point texture
@@ -332,17 +358,36 @@ void cleanup()
         tmp_img_device = NULL;
     }
 
+    if (particles_d) {
+        cudaFree(particles_d);
+        particles_d = NULL;
+    }
+
+    if (env_d) {
+        cudaFree(env_d);
+        env_d = NULL;
+    }
+
+    if (env_dest_d) {
+        cudaFree(env_dest_d);
+        env_dest_d = NULL;
+    }
+
+    if (occupied_d) {
+        cudaFree(occupied_d);
+        occupied_d = NULL;
+    }
+    
+    if (env_h) {
+        free(env_h);
+        env_h = NULL;
+    }
+
     cudaGraphicsUnregisterResource(cuda_pbo_resource);
 
     glDeleteBuffers(1, &pbo);
     glDeleteTextures(1, &texture_id);
     glDeleteProgramsARB(1, &shader);
-
-    HANDLE_ERROR(cudaFree(particles_d));
-    HANDLE_ERROR(cudaFree(env_d));
-    HANDLE_ERROR(cudaFree(occupied_d));
-    free(img_host);
-    free(env_h);
 }
 
 int main(int argc, char *argv[])
