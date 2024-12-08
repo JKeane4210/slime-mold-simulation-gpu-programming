@@ -2,7 +2,7 @@
 
 ## Milwaukee School of Engineering | MS Machine Learning
 
-### IS: GPU Programming
+### IS: GPU Programming | Fall Semester 2024
 
 **Student:** Jonny Keane
 
