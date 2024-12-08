@@ -2,7 +2,7 @@
 // #include "constant_definitions.h"
 #include <stdio.h>
 
-#define OVERLAPPING_PARTICLES
+// #define OVERLAPPING_PARTICLES
 // #define DISPLAY_PARTICLE_LOCATION
 #define DISPLAY_SLIME_TRAIL
 
@@ -127,7 +127,15 @@ __global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, 
         if (n_x_i >= 0 && n_x_i < w && n_y_i >= 0 && n_y_i < h)
         {
 #ifndef OVERLAPPING_PARTICLES
-            if (atomicAdd(&(occupied[n_y_i * w + n_x_i]), 1) == 0) // not occupied
+            if (n_x_i == p_x_i && n_y_i == p_y_i) 
+            {
+                // if in same discrete location, don't worry about atomic changes
+                p->x = n_x;
+                p->y = n_y;
+                // if (p_y_i < h && p_y_i >= 0 && p_x_i < w && p_x_i >= 0)
+                //     atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount); // deposit trail in new location
+            } 
+            else if (atomicAdd(&(occupied[n_y_i * w + n_x_i]), 1) == 0) // not occupied
             {
                 // atomicAdd(&(occupied[n_y_i * w + n_x_i]), 1);
                 atomicExch(&(occupied[p_y_i * w + p_x_i]), 0); // clear previous location
@@ -165,6 +173,7 @@ __global__ void decay_chemoattractant_kernel(float *env, int *occupied_d, uint *
     {
         float value = max(env[row * w + col] - decay_amount, 0.0);
         env[row * w + col] = value;
+        value *= VISUAL_SCALING;
         value = min(value, 255.0);
 #ifndef DISPLAY_SLIME_TRAIL
         value = 0;
@@ -172,6 +181,7 @@ __global__ void decay_chemoattractant_kernel(float *env, int *occupied_d, uint *
 #ifdef DISPLAY_PARTICLE_LOCATION
         value = max(value, (occupied_d[row * w + col] > 0) ? 255.0 : 0);
 #endif
+        
         result[row * w + col] = (0u << 24) |
                                 ((unsigned int)(value) << 16) |
                                 ((unsigned int)(value) << 8) |

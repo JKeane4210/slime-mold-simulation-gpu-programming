@@ -4,7 +4,8 @@
 #define DIFFUSION_KERNEL_R 1
 #define diffK (DIFFUSION_KERNEL_R * 2 + 1)
 #define BLOCK_SIZE 30
-#define MEAN_FILTER_CENTER_WEIGHT 0.8
+#define MEAN_FILTER_CENTER_WEIGHT 0.9
+#define VISUAL_SCALING 4
 
 #include <cuda_runtime.h>
 #include <curand_kernel.h>

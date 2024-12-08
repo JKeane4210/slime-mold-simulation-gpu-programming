@@ -37,13 +37,13 @@
 #define SA M_PI / 4 // = sensor angle
 #define SO 9        // pixel(s) = sensor offset (original = 9)
 #define SW 1        // pixel(s) = sensor width
-#define SS 1        // pixel(s) = step size
+#define SS 2        // pixel(s) = step size
 #define depT 20     // how much chemoattractant is deposited (original = 5)
-#define decayT 0.3  // decay rate of chemoattractant
-#define deltaT 0.7
+#define decayT 0.5  // decay rate of chemoattractant
+#define deltaT 1
 #define ENV_WIDTH 2000
 #define ENV_HEIGHT 1500
-#define N_PARTICLES 2000000
+#define N_PARTICLES 1000000
 #define DISPLAY_WIDTH 2000
 #define DISPLAY_HEIGHT 1500
 #define REFRESH_DELAY 20 // ms
