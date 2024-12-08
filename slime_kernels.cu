@@ -71,7 +71,7 @@ __global__ void add_food_kernel(float *food, float *food_pattern, int w, int h)
 
     if (col < w && row < h)
     {
-        food[row * w + col] += food_pattern[row * w + col]; // + 0.1;
+        food[row * w + col] += food_pattern[row * w + col] + 1;
     }
 }
 
@@ -128,7 +128,7 @@ __global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, 
         int n_y_i = (int)round(n_y);
         if (n_x_i >= 0 && n_x_i < w && n_y_i >= 0 && n_y_i < h)
         {
-            p->food += food[n_y_i * w + n_x_i] - 0.1; // 0.1 is decay rate
+            p->food += food[n_y_i * w + n_x_i] - 0.5; // 0.1 is decay rate
             p->food = max(p->food, 0.0);
             const float scale = 0.005;
 #ifndef OVERLAPPING_PARTICLES
@@ -138,7 +138,7 @@ __global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, 
                 p->x = n_x;
                 p->y = n_y;
                 if (p_y_i < h && p_y_i >= 0 && p_x_i < w && p_x_i >= 0)
-                    atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount * deltaT * (1.0 + scale * p->food)); // deposit trail in new location
+                    atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount * deltaT * (0.0 + scale * p->food)); // deposit trail in new location
             }
             else if (atomicAdd(&(occupied[n_y_i * w + n_x_i]), 1) == 0) // not occupied
             {
@@ -147,7 +147,7 @@ __global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, 
                 p->x = n_x;
                 p->y = n_y;
                 if (p_y_i < h && p_y_i >= 0 && p_x_i < w && p_x_i >= 0)
-                    atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount * deltaT * (1.0 + scale * p->food)); // deposit trail in new location
+                    atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount * deltaT * (0.0 + scale * p->food)); // deposit trail in new location
             }
             else
             {
@@ -163,7 +163,7 @@ __global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, 
             p->x = n_x;
             p->y = n_y;
             if (p_y_i < h && p_y_i >= 0 && p_x_i < w && p_x_i >= 0)
-                atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount * deltaT * (1.0 + scale * p->food)); // deposit trail in new location
+                atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount * deltaT * (0.0 + scale * p->food)); // deposit trail in new location
 #endif
         }
     }

@@ -176,11 +176,12 @@ void initCuda()
     HANDLE_ERROR(cudaMemset(food_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
     food_pattern_h = (float *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(float));
     int* occupied_h = (int *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(int));
-    unsigned char * food_pattern_unscaled_h = (unsigned char *)malloc(229 * 218 * sizeof(unsigned char));
+    unsigned char * food_pattern_unscaled_h;
     unsigned int pattern_w;
     unsigned int pattern_h;
-    sdkLoadPPM4<unsigned char>((const char *)"MSOE_2.ppm", &food_pattern_unscaled_h, &pattern_w, &pattern_h);
+    sdkLoadPPM4<unsigned char>((const char *)"MSOE.ppm", &food_pattern_unscaled_h, &pattern_w, &pattern_h);
     memset(food_pattern_h, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float));
+    memset(occupied_h, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(int));
     int scale_factor = 4;
     for (int i = 0; i < pattern_h * scale_factor; ++i)
     {
@@ -191,8 +192,8 @@ void initCuda()
             int r = ENV_HEIGHT / 2 - pattern_h * scale_factor / 2 + i;
             int c = ENV_WIDTH / 2 - pattern_w * scale_factor / 2 + j;
             float value = (float)food_pattern_unscaled_h[((pattern_h - i_scaled) * pattern_w + j_scaled) * 4];
-            food_pattern_h[r * ENV_WIDTH + c] = (value > 128) ? 1 : -10;
-            occupied_h[r * ENV_WIDTH + c] = value > 128 ? 0 : 1;
+            food_pattern_h[r * ENV_WIDTH + c] = (value > 128) ? 5 : -6;
+            // occupied_h[r * ENV_WIDTH + c] = value > 128 ? 0 : 1;
         }
     }
     HANDLE_ERROR(cudaMalloc((void **)&food_pattern_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
