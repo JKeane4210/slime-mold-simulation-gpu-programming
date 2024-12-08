@@ -132,8 +132,8 @@ __global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, 
                 // if in same discrete location, don't worry about atomic changes
                 p->x = n_x;
                 p->y = n_y;
-                // if (p_y_i < h && p_y_i >= 0 && p_x_i < w && p_x_i >= 0)
-                //     atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount); // deposit trail in new location
+                if (p_y_i < h && p_y_i >= 0 && p_x_i < w && p_x_i >= 0)
+                    atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount * deltaT); // deposit trail in new location
             } 
             else if (atomicAdd(&(occupied[n_y_i * w + n_x_i]), 1) == 0) // not occupied
             {
@@ -142,7 +142,7 @@ __global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, 
                 p->x = n_x;
                 p->y = n_y;
                 if (p_y_i < h && p_y_i >= 0 && p_x_i < w && p_x_i >= 0)
-                    atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount); // deposit trail in new location
+                    atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount * deltaT); // deposit trail in new location
             }
             else
             {
@@ -159,7 +159,7 @@ __global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, 
             p->x = n_x;
             p->y = n_y;
             if (p_y_i < h && p_y_i >= 0 && p_x_i < w && p_x_i >= 0)
-                atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount); // deposit trail in new location
+                atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount * deltaT); // deposit trail in new location
 #endif
         }
     }
@@ -171,7 +171,7 @@ __global__ void decay_chemoattractant_kernel(float *env, int *occupied_d, uint *
     int row = blockDim.y * blockIdx.y + threadIdx.y;
     if (col < w && col >= 0 && row < h && row >= 0)
     {
-        float value = max(env[row * w + col] - decay_amount, 0.0);
+        float value = max(env[row * w + col] - decay_amount * deltaT, 0.0);
         env[row * w + col] = value;
         value *= VISUAL_SCALING;
         value = min(value, 255.0);
@@ -211,7 +211,7 @@ __global__ void diffusion_kernel(float *env, float * env_dest, int w, int h) {
             float result = 0.0;
             for (int i = 0; i < diffK; ++i) {
                 for (int j = 0; j < diffK; ++j){
-                    float weight = (i == DIFFUSION_KERNEL_R && j == DIFFUSION_KERNEL_R) ? MEAN_FILTER_CENTER_WEIGHT : (((1.0 - MEAN_FILTER_CENTER_WEIGHT) / 1.8) / (3 * 3 - 1));
+                    float weight = (i == DIFFUSION_KERNEL_R && j == DIFFUSION_KERNEL_R) ? MEAN_FILTER_CENTER_WEIGHT : (((1.0 - MEAN_FILTER_CENTER_WEIGHT) / 1.1) / (3 * 3 - 1));
                     // if (col == 0 && row == 0) {
                     //     printf("%d %d %f %d %d %f\n", i, j, weight, diffK * diffK, diffK, (1.0 - MEAN_FILTER_CENTER_WEIGHT));
                     // }
