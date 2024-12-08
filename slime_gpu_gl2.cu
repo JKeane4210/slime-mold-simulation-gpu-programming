@@ -182,7 +182,7 @@ void initCuda()
     sdkLoadPPM4<unsigned char>((const char *)"MSOE.ppm", &food_pattern_unscaled_h, &pattern_w, &pattern_h);
     memset(food_pattern_h, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float));
     memset(occupied_h, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(int));
-    int scale_factor = 4;
+    int scale_factor = 6;
     for (int i = 0; i < pattern_h * scale_factor; ++i)
     {
         for (int j = 0; j < pattern_w * scale_factor; ++j)
