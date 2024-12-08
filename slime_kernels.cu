@@ -71,27 +71,19 @@ __global__ void add_food_kernel(float *food, float *food_pattern, int w, int h)
 
     if (col < w && row < h)
     {
-        food[row * w + col] += food_pattern[row * w + col] + 1;
+        food[row * w + col] += food_pattern[row * w + col]; // + 0.1;
     }
 }
 
 __device__ float sample_chemoattractant(SlimeParticle *p, float *env, float *food, int w, int h, float rotation_offset, float sensor_offset)
 {
     float angle = p->orientation + rotation_offset;
-    // if (angle < 0)
-    //     angle += 2 * M_PI;
-    // if (angle > 2 * M_PI)
-    //     angle -= 2 * M_PI;
     int s_x = (int)round(p->x + sensor_offset * cos(angle));
     int s_y = (int)round(p->y + sensor_offset * sin(angle));
     if (s_y >= 0 && s_y < h && s_x >= 0 && s_x < w)
         return env[s_y * w + s_x]; // + 10 * food[s_y * w + s_x];
     else
         p->orientation += curand_uniform(&(p->rng)) * M_PI; // keep it in bounds
-    // if (p->orientation < 0)
-    //     p->orientation += 2 * M_PI;
-    // if (p->orientation > 2 * M_PI)
-    //     p->orientation -= 2 * M_PI;
     return 0;
 }
 
@@ -119,10 +111,6 @@ __global__ void sensor_stage_kernel(SlimeParticle *particles, int n, float *env,
         {
             p->orientation += rotation_angle;
         }
-        // if (p->orientation < 0)
-        //     p->orientation += 2 * M_PI;
-        // if (p->orientation > 2 * M_PI)
-        //     p->orientation -= 2 * M_PI;
     }
 }
 
@@ -141,7 +129,7 @@ __global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, 
         if (n_x_i >= 0 && n_x_i < w && n_y_i >= 0 && n_y_i < h)
         {
             p->food += food[n_y_i * w + n_x_i] - 0.1; // 0.1 is decay rate
-            // p->food = max(p->food, 0.0);
+            p->food = max(p->food, 0.0);
             const float scale = 0.005;
 #ifndef OVERLAPPING_PARTICLES
             if (n_x_i == p_x_i && n_y_i == p_y_i)
