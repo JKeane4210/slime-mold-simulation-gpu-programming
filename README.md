@@ -1,6 +1,8 @@
 # GPU Programming Final Project: CUDA C Slime Simulation
 
-## Milwaukee School of Engineering | MS Machine Learning | IS: GPU Programming
+## Milwaukee School of Engineering | MS Machine Learning
+
+### IS: GPU Programming
 
 **Student:** Jonny Keane
 
