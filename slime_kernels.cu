@@ -1,13 +1,10 @@
 #include "slime_kernels.h"
-// #include "constant_definitions.h"
 #include <stdio.h>
 
 // #define OVERLAPPING_PARTICLES
 // #define DISPLAY_PARTICLE_LOCATION
 #define DISPLAY_SLIME_TRAIL
 // #define DISPLAY_FOOD_REGION
-
-// extern __constant__ float K[diffK][diffK];
 
 __global__ void init_circle_particle_kernel(SlimeParticle *particles, int n, int *occupied, int w, int h)
 {

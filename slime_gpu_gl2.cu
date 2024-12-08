@@ -175,8 +175,8 @@ void initCuda()
     HANDLE_ERROR(cudaMalloc((void **)&food_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
     HANDLE_ERROR(cudaMemset(food_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
     food_pattern_h = (float *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(float));
-    int* occupied_h = (int *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(int));
-    unsigned char * food_pattern_unscaled_h = (unsigned char *)malloc(229 * 218 * sizeof(unsigned char));
+    int *occupied_h = (int *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(int));
+    unsigned char *food_pattern_unscaled_h = (unsigned char *)malloc(229 * 218 * sizeof(unsigned char));
     unsigned int pattern_w;
     unsigned int pattern_h;
     sdkLoadPPM4<unsigned char>((const char *)"MSOE_2.ppm", &food_pattern_unscaled_h, &pattern_w, &pattern_h);
@@ -252,7 +252,7 @@ void display()
     sensor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SO);
     motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SS, depT, deltaT);
     diffusion_kernel<<<dg, db_diffusion>>>(env_d, env_dest_d, ENV_WIDTH, ENV_HEIGHT);
-    
+
     // swap env_d and env_dest_d
     tmp_d = env_d;
     env_d = env_dest_d;
@@ -439,7 +439,6 @@ void cleanup()
         cudaFree(food_pattern_d);
         food_pattern_d = NULL;
     }
-
 
     cudaGraphicsUnregisterResource(cuda_pbo_resource);
 
