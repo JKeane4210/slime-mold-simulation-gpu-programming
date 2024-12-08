@@ -5,6 +5,6 @@
 *.cubin
 *.fatbin
 frames*
-*.ppm
+# *.ppm
 *.mp4
 test*

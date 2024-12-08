@@ -41,9 +41,9 @@
 #define depT 20     // how much chemoattractant is deposited (original = 5)
 #define decayT 0.5  // decay rate of chemoattractant
 #define deltaT 1
-#define ENV_WIDTH 2000
-#define ENV_HEIGHT 1500
-#define N_PARTICLES 1000000
+#define ENV_WIDTH 1000
+#define ENV_HEIGHT 750
+#define N_PARTICLES 100000
 #define DISPLAY_WIDTH 2000
 #define DISPLAY_HEIGHT 1500
 #define REFRESH_DELAY 20 // ms
@@ -71,7 +71,10 @@ int *occupied_d;
 float *env_h;
 float *env_d;
 float *env_dest_d;
-float * tmp_d;
+float *tmp_d;
+float *food_d;
+float *food_pattern_h;
+float *food_pattern_d;
 // __constant__ float K[diffK][diffK];
 
 dim3 dg((ENV_WIDTH - 1) / BLOCK_SIZE + 1, (ENV_WIDTH - 1) / BLOCK_SIZE + 1, 1);
@@ -157,7 +160,7 @@ void initCuda()
     // }
     // HANDLE_ERROR(cudaMemcpyToSymbol(K, K_h, diffK * diffK * sizeof(float)));
     // free(K_h);
-    
+
     // occupied
     HANDLE_ERROR(cudaMalloc((void **)&occupied_d, ENV_WIDTH * ENV_HEIGHT * sizeof(int)));
     HANDLE_ERROR(cudaMemset(occupied_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(int)));
@@ -168,6 +171,29 @@ void initCuda()
     HANDLE_ERROR(cudaMemset(env_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
     HANDLE_ERROR(cudaMalloc((void **)&env_dest_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
     HANDLE_ERROR(cudaMemset(env_dest_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
+
+    // food
+    HANDLE_ERROR(cudaMalloc((void **)&food_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
+    HANDLE_ERROR(cudaMemset(food_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
+    food_pattern_h = (float *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(float));
+    unsigned char * food_pattern_unscaled_h = (unsigned char *)malloc(229 * 218 * sizeof(unsigned char));
+    unsigned int pattern_w;
+    unsigned int pattern_h;
+    sdkLoadPPM4<unsigned char>((const char *)"MSOE.ppm", &food_pattern_unscaled_h, &pattern_w, &pattern_h);
+    memset(food_pattern_h, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float));
+    for (int i = 0; i < pattern_h; ++i)
+    {
+        for (int j = 0; j < pattern_w; ++j)
+        {
+            int r = ENV_HEIGHT / 2 - pattern_h / 2 + i;
+            int c = ENV_WIDTH / 2 - pattern_w / 2 + j;
+            float value = (float)food_pattern_unscaled_h[((pattern_h - i) * pattern_w + j) * 4];
+            food_pattern_h[r * ENV_WIDTH + c] = (value > 0) ? 1 : -0.1;
+        }
+    }
+    HANDLE_ERROR(cudaMalloc((void **)&food_pattern_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
+    HANDLE_ERROR(cudaMemcpy(food_pattern_d, food_pattern_h, ENV_WIDTH * ENV_HEIGHT * sizeof(float), cudaMemcpyHostToDevice));
+    add_food_kernel<<<dg, db>>>(food_d, food_pattern_d, ENV_WIDTH, ENV_HEIGHT);
 
     // creating array of particles
     HANDLE_ERROR(cudaMalloc((void **)&particles_d, N_PARTICLES * sizeof(SlimeParticle)));
@@ -218,14 +244,17 @@ void display()
     // printf("Bytes accessible: %zu\n", num_bytes);
 
     // update step
-    sensor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SO);
+    sensor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SO);
     motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SS, depT, deltaT);
     diffusion_kernel<<<dg, db_diffusion>>>(env_d, env_dest_d, ENV_WIDTH, ENV_HEIGHT);
+    
     // swap env_d and env_dest_d
     tmp_d = env_d;
     env_d = env_dest_d;
     env_dest_d = tmp_d;
-    decay_chemoattractant_kernel<<<dg, db>>>(env_d, occupied_d, d_result, ENV_WIDTH, ENV_HEIGHT, decayT);
+    decay_chemoattractant_kernel<<<dg, db>>>(env_d, food_d, occupied_d, d_result, ENV_WIDTH, ENV_HEIGHT, decayT);
+    // add_food_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(food_d, food_pattern_d, ENV_WIDTH, ENV_HEIGHT); // TODO
+
     // HANDLE_ERROR(cudaDeviceSynchronize());
     HANDLE_ERROR(cudaPeekAtLastError());
 
@@ -358,27 +387,32 @@ void cleanup()
         tmp_img_device = NULL;
     }
 
-    if (particles_d) {
+    if (particles_d)
+    {
         cudaFree(particles_d);
         particles_d = NULL;
     }
 
-    if (env_d) {
+    if (env_d)
+    {
         cudaFree(env_d);
         env_d = NULL;
     }
 
-    if (env_dest_d) {
+    if (env_dest_d)
+    {
         cudaFree(env_dest_d);
         env_dest_d = NULL;
     }
 
-    if (occupied_d) {
+    if (occupied_d)
+    {
         cudaFree(occupied_d);
         occupied_d = NULL;
     }
-    
-    if (env_h) {
+
+    if (env_h)
+    {
         free(env_h);
         env_h = NULL;
     }
