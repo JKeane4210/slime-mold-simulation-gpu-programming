@@ -40,10 +40,9 @@
 #define SS 2        // pixel(s) = step size
 #define depT 20     // how much chemoattractant is deposited (original = 5)
 #define decayT 0.5  // decay rate of chemoattractant
-#define deltaT 1
-#define ENV_WIDTH 1000
-#define ENV_HEIGHT 750
-#define N_PARTICLES 100000
+#define ENV_WIDTH 2000
+#define ENV_HEIGHT 1500
+#define N_PARTICLES 1000000
 #define DISPLAY_WIDTH 2000
 #define DISPLAY_HEIGHT 1500
 #define REFRESH_DELAY 20 // ms
@@ -179,16 +178,19 @@ void initCuda()
     unsigned char * food_pattern_unscaled_h = (unsigned char *)malloc(229 * 218 * sizeof(unsigned char));
     unsigned int pattern_w;
     unsigned int pattern_h;
-    sdkLoadPPM4<unsigned char>((const char *)"MSOE.ppm", &food_pattern_unscaled_h, &pattern_w, &pattern_h);
+    sdkLoadPPM4<unsigned char>((const char *)"MSOE_2.ppm", &food_pattern_unscaled_h, &pattern_w, &pattern_h);
     memset(food_pattern_h, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float));
-    for (int i = 0; i < pattern_h; ++i)
+    int scale_factor = 4;
+    for (int i = 0; i < pattern_h * scale_factor; ++i)
     {
-        for (int j = 0; j < pattern_w; ++j)
+        for (int j = 0; j < pattern_w * scale_factor; ++j)
         {
-            int r = ENV_HEIGHT / 2 - pattern_h / 2 + i;
-            int c = ENV_WIDTH / 2 - pattern_w / 2 + j;
-            float value = (float)food_pattern_unscaled_h[((pattern_h - i) * pattern_w + j) * 4];
-            food_pattern_h[r * ENV_WIDTH + c] = (value > 0) ? 1 : -0.1;
+            int i_scaled = i / scale_factor;
+            int j_scaled = j / scale_factor;
+            int r = ENV_HEIGHT / 2 - pattern_h * scale_factor / 2 + i;
+            int c = ENV_WIDTH / 2 - pattern_w * scale_factor / 2 + j;
+            float value = (float)food_pattern_unscaled_h[((pattern_h - i_scaled) * pattern_w + j_scaled) * 4];
+            food_pattern_h[r * ENV_WIDTH + c] = (value > 128) ? 50 : -10;
         }
     }
     HANDLE_ERROR(cudaMalloc((void **)&food_pattern_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
@@ -245,7 +247,7 @@ void display()
 
     // update step
     sensor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SO);
-    motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SS, depT, deltaT);
+    motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SS, depT, deltaT);
     diffusion_kernel<<<dg, db_diffusion>>>(env_d, env_dest_d, ENV_WIDTH, ENV_HEIGHT);
     
     // swap env_d and env_dest_d

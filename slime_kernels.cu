@@ -35,6 +35,7 @@ __global__ void init_circle_particle_kernel(SlimeParticle *particles, int n, int
         // if (particles[i].orientation > 2 * M_PI)
         //     particles[i].orientation -= 2 * M_PI;
         particles[i].rng = state;
+        particles[i].food = 0;
     }
 }
 
@@ -59,6 +60,7 @@ __global__ void init_particle_kernel(SlimeParticle *particles, int n, int *occup
         particles[i].y = (float)ry;
         particles[i].orientation = r_theta;
         particles[i].rng = state;
+        particles[i].food = 0;
     }
 }
 
@@ -69,7 +71,7 @@ __global__ void add_food_kernel(float *food, float *food_pattern, int w, int h)
 
     if (col < w && row < h)
     {
-        food[row * w + col] += food_pattern[row * w + col];
+        food[row * w + col] += food_pattern[row * w + col] + 1;
     }
 }
 
@@ -83,7 +85,7 @@ __device__ float sample_chemoattractant(SlimeParticle *p, float *env, float *foo
     int s_x = (int)round(p->x + sensor_offset * cos(angle));
     int s_y = (int)round(p->y + sensor_offset * sin(angle));
     if (s_y >= 0 && s_y < h && s_x >= 0 && s_x < w)
-        return env[s_y * w + s_x] + 10 * food[s_y * w + s_x];
+        return env[s_y * w + s_x]; // + 10 * food[s_y * w + s_x];
     else
         p->orientation += curand_uniform(&(p->rng)) * M_PI; // keep it in bounds
     // if (p->orientation < 0)
@@ -124,7 +126,7 @@ __global__ void sensor_stage_kernel(SlimeParticle *particles, int n, float *env,
     }
 }
 
-__global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, int *occupied, int w, int h, float sensor_angle, float rotation_angle, float step_size, float deposit_amount, float delta_t)
+__global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, float *food, int *occupied, int w, int h, float sensor_angle, float rotation_angle, float step_size, float deposit_amount, float delta_t)
 {
     int i = blockDim.x * blockIdx.x + threadIdx.x;
     if (i < n)
@@ -138,14 +140,17 @@ __global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, 
         int n_y_i = (int)round(n_y);
         if (n_x_i >= 0 && n_x_i < w && n_y_i >= 0 && n_y_i < h)
         {
+            p->food += food[n_y_i * w + n_x_i] - 0.1; // 0.1 is decay rate
+            // p->food = max(p->food, 0.0);
+            const float scale = 0.005;
 #ifndef OVERLAPPING_PARTICLES
             if (n_x_i == p_x_i && n_y_i == p_y_i)
             {
                 // if in same discrete location, don't worry about atomic changes
                 p->x = n_x;
                 p->y = n_y;
-                // if (p_y_i < h && p_y_i >= 0 && p_x_i < w && p_x_i >= 0)
-                //     atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount); // deposit trail in new location
+                if (p_y_i < h && p_y_i >= 0 && p_x_i < w && p_x_i >= 0)
+                    atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount * deltaT * (1.0 + scale * p->food)); // deposit trail in new location
             }
             else if (atomicAdd(&(occupied[n_y_i * w + n_x_i]), 1) == 0) // not occupied
             {
@@ -154,7 +159,7 @@ __global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, 
                 p->x = n_x;
                 p->y = n_y;
                 if (p_y_i < h && p_y_i >= 0 && p_x_i < w && p_x_i >= 0)
-                    atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount); // deposit trail in new location
+                    atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount * deltaT * (1.0 + scale * p->food)); // deposit trail in new location
             }
             else
             {
@@ -165,13 +170,12 @@ __global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, 
                     p->orientation -= 2 * M_PI;
             }
 #else
-
             atomicAdd(&(occupied[n_y_i * w + n_x_i]), 1);
             atomicExch(&(occupied[p_y_i * w + p_x_i]), 0); // clear previous location
             p->x = n_x;
             p->y = n_y;
             if (p_y_i < h && p_y_i >= 0 && p_x_i < w && p_x_i >= 0)
-                atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount); // deposit trail in new location
+                atomicAdd(&(env[p_y_i * w + p_x_i]), deposit_amount * deltaT * (1.0 + scale * p->food)); // deposit trail in new location
 #endif
         }
     }
@@ -183,7 +187,7 @@ __global__ void decay_chemoattractant_kernel(float *env, float *food, int *occup
     int row = blockDim.y * blockIdx.y + threadIdx.y;
     if (col < w && col >= 0 && row < h && row >= 0)
     {
-        float value = max(env[row * w + col] - decay_amount, 0.0);
+        float value = max(env[row * w + col] - decay_amount * deltaT, 0.0);
         env[row * w + col] = value;
         value *= VISUAL_SCALING;
         value = min(value, 255.0);
