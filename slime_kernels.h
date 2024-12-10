@@ -7,6 +7,7 @@
 #define MEAN_FILTER_CENTER_WEIGHT 0.9
 #define VISUAL_SCALING 4
 #define deltaT 1
+#define N_FOOD_TYPES 2
 
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
@@ -17,7 +18,7 @@ struct SlimeParticle
     float y;
     float orientation;
     curandState_t rng;
-    float food;
+    float food[N_FOOD_TYPES];
 };
 
 __global__ void init_circle_particle_kernel(SlimeParticle *particles, int n, int *occupied, int w, int h);

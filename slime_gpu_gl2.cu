@@ -165,22 +165,22 @@ void initCuda()
     // HANDLE_ERROR(cudaMemset(occupied_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(int)));
 
     // creating environment
-    env_h = (float *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(float));
-    HANDLE_ERROR(cudaMalloc((void **)&env_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
-    HANDLE_ERROR(cudaMemset(env_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
-    HANDLE_ERROR(cudaMalloc((void **)&env_dest_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
-    HANDLE_ERROR(cudaMemset(env_dest_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
+    env_h = (float *)malloc(N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float));
+    HANDLE_ERROR(cudaMalloc((void **)&env_d, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
+    HANDLE_ERROR(cudaMemset(env_d, 0, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
+    HANDLE_ERROR(cudaMalloc((void **)&env_dest_d, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
+    HANDLE_ERROR(cudaMemset(env_dest_d, 0, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
 
     // food
-    HANDLE_ERROR(cudaMalloc((void **)&food_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
-    HANDLE_ERROR(cudaMemset(food_d, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
-    food_pattern_h = (float *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(float));
+    HANDLE_ERROR(cudaMalloc((void **)&food_d, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
+    HANDLE_ERROR(cudaMemset(food_d, 0, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
+    food_pattern_h = (float *)malloc(N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float));
     int* occupied_h = (int *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(int));
     unsigned char * food_pattern_unscaled_h;
     unsigned int pattern_w;
     unsigned int pattern_h;
     sdkLoadPPM4<unsigned char>((const char *)"MSOE.ppm", &food_pattern_unscaled_h, &pattern_w, &pattern_h);
-    memset(food_pattern_h, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(float));
+    memset(food_pattern_h, 0, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float));
     memset(occupied_h, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(int));
     int scale_factor = 6;
     for (int i = 0; i < pattern_h * scale_factor; ++i)
@@ -192,12 +192,12 @@ void initCuda()
             int r = ENV_HEIGHT / 2 - pattern_h * scale_factor / 2 + i;
             int c = ENV_WIDTH / 2 - pattern_w * scale_factor / 2 + j;
             float value = (float)food_pattern_unscaled_h[((pattern_h - i_scaled) * pattern_w + j_scaled) * 4];
-            food_pattern_h[r * ENV_WIDTH + c] = (value > 128) ? 5 : -6;
+            food_pattern_h[(r * ENV_WIDTH + c) * N_FOOD_TYPES] = (value > 128) ? 5 : -6;
             // occupied_h[r * ENV_WIDTH + c] = value > 128 ? 0 : 1;
         }
     }
-    HANDLE_ERROR(cudaMalloc((void **)&food_pattern_d, ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
-    HANDLE_ERROR(cudaMemcpy(food_pattern_d, food_pattern_h, ENV_WIDTH * ENV_HEIGHT * sizeof(float), cudaMemcpyHostToDevice));
+    HANDLE_ERROR(cudaMalloc((void **)&food_pattern_d, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
+    HANDLE_ERROR(cudaMemcpy(food_pattern_d, food_pattern_h, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float), cudaMemcpyHostToDevice));
     HANDLE_ERROR(cudaMemcpy(occupied_d, occupied_h, ENV_WIDTH * ENV_HEIGHT * sizeof(int), cudaMemcpyHostToDevice));
     add_food_kernel<<<dg, db>>>(food_d, food_pattern_d, ENV_WIDTH, ENV_HEIGHT);
 
