@@ -192,7 +192,8 @@ void initCuda()
             int r = ENV_HEIGHT / 2 - pattern_h * scale_factor / 2 + i;
             int c = ENV_WIDTH / 2 - pattern_w * scale_factor / 2 + j;
             float value = (float)food_pattern_unscaled_h[((pattern_h - i_scaled) * pattern_w + j_scaled) * 4];
-            food_pattern_h[(r * ENV_WIDTH + c) * N_FOOD_TYPES] = (value > 128) ? 5 : -6;
+            food_pattern_h[(r * ENV_WIDTH + c) * N_FOOD_TYPES] = (value > 128) ? 1 : -1;
+            food_pattern_h[(r * ENV_WIDTH + c) * N_FOOD_TYPES + 1] = (value < 128) ? 1 : -2;
             // occupied_h[r * ENV_WIDTH + c] = value > 128 ? 0 : 1;
         }
     }

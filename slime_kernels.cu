@@ -77,9 +77,10 @@ __global__ void add_food_kernel(float *food, float *food_pattern, int w, int h)
     if (col < w && row < h)
     {
         float value = food_pattern[(row * w + col) * N_FOOD_TYPES];
-        food[(row * w + col) * N_FOOD_TYPES] += value; // red
-        if (value == 0)
-            food[(row * w + col) * N_FOOD_TYPES + 1] += 1;
+        food[(row * w + col) * N_FOOD_TYPES] += value; // white
+        food[(row * w + col) * N_FOOD_TYPES + 1] += food_pattern[(row * w + col) * N_FOOD_TYPES + 1]; // red
+        // if (value == 0)
+        //     food[(row * w + col) * N_FOOD_TYPES + 1] += 0;
     }
 }
 
