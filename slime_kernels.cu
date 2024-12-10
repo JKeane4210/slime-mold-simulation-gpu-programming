@@ -138,9 +138,9 @@ __global__ void motor_stage_kernel(SlimeParticle *particles, int n, float *env, 
         if (n_x_i >= 0 && n_x_i < w && n_y_i >= 0 && n_y_i < h)
         {
             p->food[0] += food[(n_y_i * w + n_x_i) * N_FOOD_TYPES] - 0.5; // 0.1 is decay rate
-            p->food[0] = max(p->food[0], 0.0);
+            p->food[0] = min(max(p->food[0], 0.0), 500.0);
             p->food[1] += food[(n_y_i * w + n_x_i) * N_FOOD_TYPES + 1] - 0.5;
-            p->food[1] = max(p->food[1], 0.0);
+            p->food[1] = min(max(p->food[1], 0.0), 500.0);
             const float scale = 0.005;
 #ifndef OVERLAPPING_PARTICLES
             if (n_x_i == p_x_i && n_y_i == p_y_i)
