@@ -3,7 +3,8 @@ From: ubuntu:16.04
 
 %post
     apt-get -y update
-    apt-get -y install fortune cowsay lolcat
+    apt-get -y install mesa-utils
+    apt-get -y install freeglut3-dev
 
 %environment
     export LC_ALL=C
