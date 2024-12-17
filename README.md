@@ -112,7 +112,7 @@ nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
     Current serial number in output stream:  45
     ```
 
-    This seems to be the result of multiple users using the GLX context on the same GPU. While I don't know for sure, this may be because only one GLX context is allowed per GPU (or some issue with having too many accesses to the same graphics resources).
+    This seems to be the result of multiple users using the GLX context on the same GPU. While I don't know for sure, this may be because only one GLX context is allowed per GPU (or some issue with having too many accesses to the same graphics resources). If you wish to use specific nodes, you can add the argument ```--nodelist dh-node12```, which can be replaced with the node you wish to target.
 
 - If this gives a weird error about SEGMENTATION faults on ROSIE, there are some cases where failed compilation can leave the GPUs in a weird state leading to this behavior. If you wish to use specific nodes, you can add the argument ```--nodelist dh-node12```, which can be replaced with the node you wish to target.
 
@@ -144,4 +144,4 @@ prime-run ./slimeGL
 
 [srun Documentation](https://slurm.schedmd.com/srun.html)
 
-- There's a lot of arguments that I did not know about for getting the displaying working through a node with GPU allocated (namely the --x11 argument for display forwarding and the --export ALL for exporting environment variables over to the environment used when running the command).
+- There's a lot of arguments that I did not know about for getting the displaying working through a node with GPU allocated (namely the ```--x11``` argument for display forwarding and the ```--export ALL``` for exporting environment variables over to the environment used when running the command).
