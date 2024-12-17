@@ -30,8 +30,6 @@ nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
 
 ## Running Code
 
-TODO: export 
-
 ### Running on ROSIE
 
 ***If you are on ROSIE***, things can be a little trickier because we first need to allocate a node with a GPU for doing the simulation/rending, but then we need to do X11 forwarding back from the node through the SSH to ROSIE back to you laptop. Luckily, srun has some helpful arguments that we can work with to create this behavior.
@@ -77,6 +75,12 @@ TODO: export
     - ```shared_libaries``` directory that will be passed along for the executable to read from on the teaching node (contains ```libglut.so.3``` file)
 
     - ```bin``` directory with a ```prime-run`` executable that will be used in the srun command to call the executable with correct NVIDIA graphics configurations
+
+    This also configures some environment variables:
+
+    - ```LD_LIBRARY_PATH``` includes the files in ~/tmp
+
+    - ```PATH``` includes the files in ~/bin (prime-run) and the path to the nvcc compiler on ROSIE
 
     - ```XAUTHORITY``` environment variable, which specifies the path to the X11 authentication file
 
