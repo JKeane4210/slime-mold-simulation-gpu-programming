@@ -43,8 +43,8 @@
 #define ENV_WIDTH 2000
 #define ENV_HEIGHT 1500
 #define N_PARTICLES 1000000
-#define DISPLAY_WIDTH 2000
-#define DISPLAY_HEIGHT 1500
+#define DISPLAY_WIDTH 600
+#define DISPLAY_HEIGHT 450
 #define REFRESH_DELAY 20 // ms
 
 void display();

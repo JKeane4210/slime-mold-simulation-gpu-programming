@@ -20,7 +20,7 @@ An example of using different types of food to color the chemical trails of the 
 
 An example of having food on the map for the particles to strive for, while also having dead regions that they cannot get to the food from.
 
-## Building
+## Compilation
 
 On a computer with the nvcc compiler installed and having the glut libraries installed for using OpenGL (should most likely be preinstalled with CUDA driver), you can run the following command to compile:
 
@@ -28,11 +28,80 @@ On a computer with the nvcc compiler installed and having the glut libraries ins
 nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
 ```
 
-If you have prime-run set up on your computer (see resources below for help setting up), you can run the code with the following command:
+## Running Code
+
+### Running on Personal PC
+
+If you have prime-run set up on your computer with a GPU (see resources below for help setting up), you can run the code with the following command:
 
 ```
 prime-run ./slimeGL
 ```
+
+### Running on ROSIE
+
+***If you are on ROSIE***, things can be a little trickier because we first need to allocate a node with a GPU for doing the simulation/rending, but then we need to do X11 forwarding back from the node through the SSH to ROSIE back to you laptop. Luckily, srun has some helpful arguments that we can work with to create this behavior.
+
+1. Set up an X11 protocol server on your computer. 
+
+    - *Linux*: An X11 server should be installed by default, but if not, you can install ```xorg```:
+
+        ```
+        sudo apt-get install xorg
+        ```
+
+    - *Windows*: There are two big sources for X11 servers on Windows. XMing and VcXsrv. I used VcXsrv because it apparently has more capabilities. You should download the server and X11 fonts package.
+
+        - VcXSrv Download: https://en.softonic.com/download/xming/windows/post-download
+
+        - X11 Fonts Download: https://en.softonic.com/download/xming/windows/post-download
+
+        Once these are downloaded, type in the command *XLaunch* and launch the server with all the default configurations.
+
+
+2. Configure SSH config on your personal computer for ROSIE to allow X11 forwarding (if you have ROSIE in your SSH config, edit to include the missing lines).
+
+    ```
+    Host rosie
+    XAuthLocation /usr/bin/xauth
+    ForwardX11 yes
+    ForwardX11Trusted yes
+    HostName dh-mgmt2.hpc.msoe.edu
+    User username
+    ```
+
+    X11 is a display protocol that is a little slow, so you won't be able to do a lot of fast frame-by-frame rendering for displays sent with the protocol, but it is a lightweight method of creating a display. Once this step is completed, X11 forwarding can be sent to your X11 server. You can test this by running ```xclock``` in the terminal connected to ROSIE.
+
+3. Run setup script.
+
+    ```
+    source ./Setup_ROSIE.sh
+    ```
+
+    This creates the follwing in a temporary directory in ~/tmp:
+    
+    - ```shared_libaries``` directory that will be passed along for the executable to read from on the teaching node (contains ```libglut.so.3``` file)
+
+    - ```bin``` directory with a ```prime-run`` executable that will be used in the srun command to call the executable with correct NVIDIA graphics configurations
+
+    - ```XAUTHORITY``` environment variable, which specifies the path to the X11 authentication file
+
+4. Run the following srun command:
+
+    ```
+    srun -G 1 --x11 --export ALL prime-run ./slimeGL
+    ```
+
+     A little description of the arguments used here: 
+
+     - ```-G 1``` - allocates a single GPU to be used
+
+     - ```--x11``` - allows X11 display forwarding from node back to source node
+
+     - ```export ALL``` - uses all environment variables from source node in the target node
+
+     - ```prime-run ./slimeGL``` - runs the ```./slimeGL``` executable with a series of presets to allow for correct NVIDIA graphics configuration
+
 
 ## Resources
 
@@ -51,3 +120,7 @@ prime-run ./slimeGL
 [prime-run Command Not Found - Stack Overflow](https://askubuntu.com/questions/1364762/prime-run-command-not-found)
 
 - After executing the boxFilter code ended up not working, I found out I needed to use [prime-run](https://forums.developer.nvidia.com/t/getting-an-error-code-999-everytime-i-try-to-use-opengl-with-cuda/203769) command to run my executables with graphics code. I did not have this installed, however, but this Stack Overflow post helped me work through this.
+
+[srun Documentation](https://slurm.schedmd.com/srun.html)
+
+- There's a lot of arguments that I did not know about for getting the displaying working through a node with GPU allocated (namely the --x11 argument for display forwarding and the --export ALL for exporting environment variables over to the environment used when running the command).
