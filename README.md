@@ -44,7 +44,7 @@ nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
 
     - *Windows*: There are two big sources for X11 servers on Windows. XMing and VcXsrv. I used VcXsrv because it apparently has more capabilities. You should download the server and X11 fonts package.
 
-        - VcXSrv Download: https://sourceforge.net/projects/vcxsrv/
+        - VcXsrv Download: https://sourceforge.net/projects/vcxsrv/
 
         - X11 Fonts Download: https://en.softonic.com/download/xming/windows/post-download
 
@@ -123,6 +123,22 @@ If you have prime-run set up on your computer (as done above) with a GPU (see re
 ```
 prime-run ./slimeGL
 ```
+
+## Implementation
+
+TODO
+
+## Benchmarking
+
+TODO
+
+## Future Work
+
+On the side of optimization of this algorithm, once interesting thought suggested by Bart Gebka was that in the more elaborate slime simulations, particles will generally stay in the same neighborhood and have similar neighboring particles. With this, a potential point of optimization would be that if you could create an approach that keeps track of what "tile" the particles are in and maintain this through the simulation, you could potentially load the tile into shared memory that could be reused by the neighborhood of particles so that memory accesses are more often reaching into shared memory rather than global memory. This technique would be more important as you increase the size of sensor regions. 
+
+The big thing that would be needed in creating this optimization would be some efficient way to resort the particles into their respective tiles. This might only need to be something that occurs periodically if it ends up being too much work to do on every update step, but this would be OK because particles should not change positions that rapidly, so periodic reorganization could still work.
+
+With the addition of food coloring functionality, I think there is a really cool opportunity to extend this technique to an arbitrary image with arbitrary key colors. While I do not have a good resource for how to algorithmically create one of these, sites like [PBNify](https://pbnify.com/) seem to have a way of finding the blocks for specific colors once they are identified, so it seems feasible to be able to create a set of masks for each color. With this, you could abstract the current state of the code so that you can take any image, identify its key colors, create masks of these colors, and create a slime representation of the image.
 
 ## Resources
 
