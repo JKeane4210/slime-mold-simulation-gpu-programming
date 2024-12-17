@@ -271,7 +271,7 @@ void display()
     unsigned char *h_result;
     cudaMemcpy((unsigned char *)h_result, (unsigned char *)d_result,
                ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int), cudaMemcpyDeviceToHost);
-    sdkSavePPM4ub((const char *)"tmp.ppm", (unsigned char *)h_result, ENV_WIDTH, ENV_HEIGHT);
+    sdkSavePPM4ub((const char *)"assets/tmp.ppm", (unsigned char *)h_result, ENV_WIDTH, ENV_HEIGHT);
 #endif
 
     // OpenGL display code path
