@@ -20,14 +20,6 @@ An example of using different types of food to color the chemical trails of the 
 
 An example of having food on the map for the particles to strive for, while also having dead regions that they cannot get to the food from.
 
-## Compilation
-
-On a computer with the nvcc compiler installed and having the glut libraries installed for using OpenGL (should most likely be preinstalled with CUDA driver), you can run the following command to compile:
-
-```
-nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
-```
-
 ## Running Code
 
 ### Running on ROSIE
@@ -36,7 +28,7 @@ nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
 
 1. Set up an X11 protocol server on your computer. 
 
-    - *Linux*: An X11 server should be installed by default, but if not, you can install ```xorg```:
+    - *Linux*: An X11 server should be installed by default, but if not, you can install `xorg`
 
         ```
         sudo apt-get install xorg
@@ -62,7 +54,7 @@ nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
     User username
     ```
 
-    X11 is a display protocol that is a little slow, so you won't be able to do a lot of fast frame-by-frame rendering for displays sent with the protocol, but it is a lightweight method of creating a display. Once this step is completed, X11 forwarding can be sent to your X11 server. You can test this by running ```xclock``` in the terminal connected to ROSIE.
+    X11 is a display protocol that is a little slow, so you won't be able to do a lot of fast frame-by-frame rendering for displays sent with the protocol, but it is a lightweight method of creating a display. Once this step is completed, X11 forwarding can be sent to your X11 server. You can test this by running `xclock` in the terminal connected to ROSIE.
 
 3. Run setup script.
 
@@ -72,17 +64,25 @@ nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
 
     This creates the follwing in a temporary directory in ~/tmp:
     
-    - ```shared_libaries``` directory that will be passed along for the executable to read from on the teaching node (contains ```libglut.so.3``` file)
+    - `shared_libaries` directory that will be passed along for the executable to read from on the teaching node (contains `libglut.so.3` file)
 
-    - ```bin``` directory with a ```prime-run``` executable that will be used in the srun command to call the executable with correct NVIDIA graphics configurations
+    - `bin` directory with a `prime-run` executable that will be used in the srun command to call the executable with correct NVIDIA graphics configurations
 
     This also configures some environment variables (and places them in your ~/.bashrc):
 
-    - ```LD_LIBRARY_PATH``` includes the files in ~/tmp
+    - `LD_LIBRARY_PATH` includes the files in ~/tmp
 
-    - ```PATH``` includes the files in ~/bin (prime-run) and the path to the nvcc compiler on ROSIE
+    - `PATH` includes the files in ~/bin (prime-run) and the path to the nvcc compiler on ROSIE
 
-    - ```XAUTHORITY``` environment variable, which specifies the path to the X11 authentication file
+    - `XAUTHORITY` environment variable, which specifies the path to the X11 authentication file
+
+3. Compile slime code with the following command:
+
+    ```
+    nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
+    ```
+
+    The extra arguments are needed for pulling in the OpenGL libraries.
 
 4. Run the following srun command:
 
@@ -92,13 +92,13 @@ nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
 
      A little description of the arguments used here: 
 
-     - ```-G 1``` - allocates a single GPU to be used
+     - `-G 1` - allocates a single GPU to be used
 
-     - ```--x11``` - allows X11 display forwarding from node back to source node
+     - `--x11` - allows X11 display forwarding from node back to source node
 
-     - ```export ALL``` - uses all environment variables from source node in the target node
+     - `export ALL` - uses all environment variables from source node in the target node
 
-     - ```prime-run ./slimeGL``` - runs the ```./slimeGL``` executable with a series of presets to allow for correct NVIDIA graphics configuration
+     - `prime-run ./slimeGL` - runs the `./slimeGL` executable with a series of presets to allow for correct NVIDIA graphics configuration
 
 ***Common Issues:***
 
@@ -112,17 +112,23 @@ nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
     Current serial number in output stream:  45
     ```
 
-    This seems to be the result of multiple users using the GLX context on the same GPU. While I don't know for sure, this may be because only one GLX context is allowed per GPU (or some issue with having too many accesses to the same graphics resources). If you wish to use specific nodes, you can add the argument ```--nodelist dh-node12```, which can be replaced with the node you wish to target.
+    This seems to be the result of multiple users using the GLX context on the same GPU. While I don't know for sure, this may be because only one GLX context is allowed per GPU (or some issue with having too many accesses to the same graphics resources). If you wish to use specific nodes, you can add the argument `--nodelist dh-node12` which can be replaced with the node you wish to target.
 
-- If this gives a weird error about SEGMENTATION faults on ROSIE, there are some cases where failed compilation can leave the GPUs in a weird state leading to this behavior. If you wish to use specific nodes, you can add the argument ```--nodelist dh-node12```, which can be replaced with the node you wish to target.
+- If this gives a weird error about SEGMENTATION faults on ROSIE, there are some cases where failed compilation can leave the GPUs in a weird state leading to this behavior. If you wish to use specific nodes, you can add the argument `--nodelist dh-node12` which can be replaced with the node you wish to target.
 
 ### Running on Personal PC
 
-If you have prime-run set up on your computer (as done above) with a GPU (see resources below for help setting up), you can run the code with the following command:
+1. On a computer with the nvcc compiler installed and having the glut libraries installed for using OpenGL (should most likely be preinstalled with CUDA driver), you can run the following command to compile:
 
-```
-prime-run ./slimeGL
-```
+    ```
+    nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
+    ```
+
+2. If you have prime-run set up on your computer (as done above) with a GPU (see resources below for help setting up), you can run the code with the following command:
+
+    ```
+    prime-run ./slimeGL
+    ```
 
 ## Implementation
 
@@ -160,4 +166,4 @@ With the addition of food coloring functionality, I think there is a really cool
 
 [srun Documentation](https://slurm.schedmd.com/srun.html)
 
-- There's a lot of arguments that I did not know about for getting the displaying working through a node with GPU allocated (namely the ```--x11``` argument for display forwarding and the ```--export ALL``` for exporting environment variables over to the environment used when running the command).
+- There's a lot of arguments that I did not know about for getting the displaying working through a node with GPU allocated (namely the `--x11` argument for display forwarding and the `--export ALL` for exporting environment variables over to the environment used when running the command).
