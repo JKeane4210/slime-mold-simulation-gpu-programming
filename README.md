@@ -74,7 +74,7 @@ nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
     
     - ```shared_libaries``` directory that will be passed along for the executable to read from on the teaching node (contains ```libglut.so.3``` file)
 
-    - ```bin``` directory with a ```prime-run`` executable that will be used in the srun command to call the executable with correct NVIDIA graphics configurations
+    - ```bin``` directory with a ```prime-run``` executable that will be used in the srun command to call the executable with correct NVIDIA graphics configurations
 
     This also configures some environment variables (and places them in your ~/.bashrc):
 
