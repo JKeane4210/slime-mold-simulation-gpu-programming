@@ -31,6 +31,11 @@ if [ -d "$HOME/tmp/bin" ] && [[ ":$PATH:" != *":$HOME/tmp/bin:"* ]]; then
     echo 'export PATH="$HOME/tmp/bin:$PATH"' >> ~/.bashrc
 fi
 
+# if not already added, adds /usr/local/cuda/bin to $PATH (setup for prime-run)
+if [ -d "/usr/local/cuda/bin" ] && [[ ":$PATH:" != *"/usr/local/cuda/bin:"* ]]; then
+    echo 'export PATH="/usr/local/cuda/bin:$PATH"' >> ~/.bashrc
+fi
+
 # if not already added, create $XAUTHORITY variable
 if [ -f "$HOME/.Xauthority" ] && [[ ":$XAUTHORITY:" != *":$HOME/.Xauthority:"* ]]; then
     echo 'export XAUTHORITY="$HOME/.Xauthority"' >> ~/.bashrc

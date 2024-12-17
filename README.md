@@ -30,13 +30,7 @@ nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
 
 ## Running Code
 
-### Running on Personal PC
-
-If you have prime-run set up on your computer with a GPU (see resources below for help setting up), you can run the code with the following command:
-
-```
-prime-run ./slimeGL
-```
+TODO: export 
 
 ### Running on ROSIE
 
@@ -102,6 +96,13 @@ prime-run ./slimeGL
 
      - ```prime-run ./slimeGL``` - runs the ```./slimeGL``` executable with a series of presets to allow for correct NVIDIA graphics configuration
 
+### Running on Personal PC
+
+If you have prime-run set up on your computer (as done above) with a GPU (see resources below for help setting up), you can run the code with the following command:
+
+```
+prime-run ./slimeGL
+```
 
 ## Resources
 
