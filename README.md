@@ -12,11 +12,11 @@
 
 In this project, I implement a slime mold simulation in CUDA C that can be parallelized on a NVIDIA GPU. Slime molds are simple organisms that work effectively in colonies. Each particle has simple rules that dictate where to move and where to deposit chemoattract trails, so that other particles can choose to follow down explored paths. In the final state of this project, I achieve a kernel that can run 1 million particle threads operating in parallel and create a real time video feed that illustrates the evolution of the chemoattractant trails. Frames are rendered directly from GPU memory using the CUDA GL interop. Beyond this, I explored the use of blockers in the environment, food trails, and different hyperparameters for slime particle functionality to create an environment that allows for using an image as a food source, so slime particles may learn to converge to a state that takes on the shape of the given image. In addition to this, I also explore the use of having the particles leaving chemical trails of different colors based on different food sources they have consumed, which allowed for an even more interesting graphic to be created.
 
-<img src="MSOE_Slime_FoodColoring.jpg">
+<img src="assets/MSOE_Slime_FoodColoring.jpg">
 
 An example of using different types of food to color the chemical trails of the particles.
 
-<img src="MSOE_Slime.jpg">
+<img src="assets/MSOE_Slime.jpg">
 
 An example of having food on the map for the particles to strive for, while also having dead regions that they cannot get to the food from.
 
