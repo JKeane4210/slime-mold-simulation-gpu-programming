@@ -44,7 +44,7 @@ nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
 
     - *Windows*: There are two big sources for X11 servers on Windows. XMing and VcXsrv. I used VcXsrv because it apparently has more capabilities. You should download the server and X11 fonts package.
 
-        - VcXSrv Download: https://en.softonic.com/download/xming/windows/post-download
+        - VcXSrv Download: https://sourceforge.net/projects/vcxsrv/
 
         - X11 Fonts Download: https://en.softonic.com/download/xming/windows/post-download
 
