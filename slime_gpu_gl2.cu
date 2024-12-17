@@ -179,7 +179,7 @@ void initCuda()
     unsigned char * food_pattern_unscaled_h;
     unsigned int pattern_w;
     unsigned int pattern_h;
-    sdkLoadPPM4<unsigned char>((const char *)"MSOE.ppm", &food_pattern_unscaled_h, &pattern_w, &pattern_h);
+    sdkLoadPPM4<unsigned char>((const char *)"assets/MSOE.ppm", &food_pattern_unscaled_h, &pattern_w, &pattern_h);
     memset(food_pattern_h, 0, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float));
     memset(occupied_h, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(int));
     int scale_factor = 6;
