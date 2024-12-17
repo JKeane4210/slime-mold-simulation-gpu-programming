@@ -32,7 +32,7 @@ nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
 
 ### Running on ROSIE
 
-***If you are on ROSIE***, things can be a little trickier because we first need to allocate a node with a GPU for doing the simulation/rending, but then we need to do X11 forwarding back from the node through the SSH to ROSIE back to you laptop. Luckily, srun has some helpful arguments that we can work with to create this behavior.
+***If you are on ROSIE***, things can be a little trickier because you first need to allocate a node with a GPU for doing the simulation/rendering, but then you need to do X11 forwarding back from the node through the SSH to ROSIE back to your laptop. Luckily, srun has some helpful arguments that you can work with to create this behavior.
 
 1. Set up an X11 protocol server on your computer. 
 
@@ -76,7 +76,7 @@ nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
 
     - ```bin``` directory with a ```prime-run`` executable that will be used in the srun command to call the executable with correct NVIDIA graphics configurations
 
-    This also configures some environment variables:
+    This also configures some environment variables (and places them in your ~/.bashrc):
 
     - ```LD_LIBRARY_PATH``` includes the files in ~/tmp
 
@@ -99,6 +99,22 @@ nvcc slime_gpu_gl2.cu slime_kernels.cu -L libs -o slimeGL -lGL -lGLU -lglut
      - ```export ALL``` - uses all environment variables from source node in the target node
 
      - ```prime-run ./slimeGL``` - runs the ```./slimeGL``` executable with a series of presets to allow for correct NVIDIA graphics configuration
+
+***Common Issues:***
+
+- There may be cases where you see an X Error that looks something like this:
+
+    ```
+    X Error of failed request:  BadRequest (invalid request code or no such operation)
+    Major opcode of failed request:  149 (GLX)
+    Minor opcode of failed request:  187 ()
+    Serial number of failed request:  45
+    Current serial number in output stream:  45
+    ```
+
+    This seems to be the result of multiple users using the GLX context on the same GPU. While I don't know for sure, this may be because only one GLX context is allowed per GPU (or some issue with having too many accesses to the same graphics resources).
+
+- If this gives a weird error about SEGMENTATION faults on ROSIE, there are some cases where failed compilation can leave the GPUs in a weird state leading to this behavior. If you wish to use specific nodes, you can add the argument ```--nodelist dh-node12```, which can be replaced with the node you wish to target.
 
 ### Running on Personal PC
 
