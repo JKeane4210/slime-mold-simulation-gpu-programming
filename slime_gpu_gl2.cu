@@ -47,6 +47,9 @@
 #define DISPLAY_HEIGHT 450
 #define REFRESH_DELAY 20 // ms
 
+const int DISPLAY = 0;
+const int BENCHMARK = 1;
+
 void display();
 void keyboard(unsigned char key, int /*x*/, int /*y*/);
 void reshape(int x, int y);
@@ -175,8 +178,8 @@ void initCuda()
     HANDLE_ERROR(cudaMalloc((void **)&food_d, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
     HANDLE_ERROR(cudaMemset(food_d, 0, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
     food_pattern_h = (float *)malloc(N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float));
-    int* occupied_h = (int *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(int));
-    unsigned char * food_pattern_unscaled_h;
+    int *occupied_h = (int *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(int));
+    unsigned char *food_pattern_unscaled_h;
     unsigned int pattern_w;
     unsigned int pattern_h;
     sdkLoadPPM4<unsigned char>((const char *)"assets/MSOE.ppm", &food_pattern_unscaled_h, &pattern_w, &pattern_h);
@@ -449,16 +452,96 @@ void cleanup()
     glDeleteProgramsARB(1, &shader);
 }
 
+void benchmark(int n_trials)
+{
+    unsigned int *d_result = (unsigned int *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int));
+    cudaEvent_t start, stop; //declare a start and stop event
+    cudaEventCreate(&start); //create both events
+    cudaEventCreate(&stop);
+    for (int trial = 0; trial < 20000; ++trial)
+    {
+        // update step
+        sensor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SO);
+
+        // motor stage
+        motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SS, depT, deltaT);
+        
+        // diffusion
+        diffusion_kernel<<<dg, db_diffusion>>>(env_d, env_dest_d, ENV_WIDTH, ENV_HEIGHT);
+
+        // swap env_d and env_dest_d
+        tmp_d = env_d;
+        env_d = env_dest_d;
+        env_dest_d = tmp_d;
+
+        // decay chemoattractant
+        decay_chemoattractant_kernel<<<dg, db>>>(env_d, food_d, occupied_d, d_result, ENV_WIDTH, ENV_HEIGHT, decayT);
+    }
+    printf("trials completed\n");
+    for (int trial = 0; trial < n_trials; ++trial)
+    {
+        printf("\n*** Trial %d ***\n", trial + 1);
+
+        // update step
+        cudaEventRecord(start); // insert the start event into the stream
+        sensor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SO);
+        cudaEventRecord(stop); // insert the stop event into the stream
+        report_kernel_benchmark("sensor_stage_kernel", start, stop);
+
+        // motor stage
+        cudaEventRecord(start); // insert the start event into the stream
+        motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SS, depT, deltaT);
+        cudaEventRecord(stop); // insert the stop event into the stream
+        report_kernel_benchmark("motor_stage_kernel", start, stop);
+        
+        // diffusion
+        cudaEventRecord(start); // insert the start event into the stream
+        diffusion_kernel<<<dg, db_diffusion>>>(env_d, env_dest_d, ENV_WIDTH, ENV_HEIGHT);
+        cudaEventRecord(stop); // insert the stop event into the stream
+        report_kernel_benchmark("diffusion_kernel", start, stop);
+
+        // swap env_d and env_dest_d
+        tmp_d = env_d;
+        env_d = env_dest_d;
+        env_dest_d = tmp_d;
+
+        // decay chemoattractant
+        cudaEventRecord(start); // insert the start event into the stream
+        decay_chemoattractant_kernel<<<dg, db>>>(env_d, food_d, occupied_d, d_result, ENV_WIDTH, ENV_HEIGHT, decayT);
+        cudaEventRecord(stop); // insert the stop event into the stream
+        report_kernel_benchmark("decay_chemoattractant_kernel", start, stop);
+    }
+    unsigned char *h_result = (unsigned char *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned char));
+    cudaMemcpy((unsigned char *)h_result, (unsigned char *)d_result,
+               ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int), cudaMemcpyDeviceToHost);
+    sdkSavePPM4ub((const char *)"assets/tmp.ppm", (unsigned char *)h_result, ENV_WIDTH, ENV_HEIGHT);
+    free(h_result);
+    free(d_result);
+}
+
 int main(int argc, char *argv[])
 {
+    int mode = DISPLAY;
+    if (argc > 1)
+        mode = atoi(argv[1]);
+    printf("Mode (%d - %s %d): %s\n", argc, argv[1], mode, mode == DISPLAY ? "DISPLAY" : "BENCHMARK");
+
 #if defined(__linux__)
     setenv("DISPLAY", ":0", 0);
 #endif
     findCudaDevice(argc, (const char **)argv);
-    initGL(&argc, argv);
     initCuda();
-    initGLResources();
-    glutCloseFunc(cleanup);
-    glutMainLoop();
+    if (mode == DISPLAY)
+    {
+        initGL(&argc, argv);
+        initGLResources();
+        glutCloseFunc(cleanup);
+        glutMainLoop();
+    }
+    else if (mode == BENCHMARK)
+    {
+        benchmark(10);
+        cleanup();
+    }
     return 0;
 }
