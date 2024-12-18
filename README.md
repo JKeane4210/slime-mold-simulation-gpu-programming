@@ -18,7 +18,57 @@ An example of using different types of food to color the chemical trails of the 
 
 <img src="assets/MSOE_Slime.jpg">
 
-An example of having food on the map for the particles to strive for, while also having dead regions that they cannot get to the food from.
+An example of having food on the map for the particles to strive for, while also having dead regions that they cannot get to the food from. This code can be found on the `food` branch of the repository.
+
+## Implementation
+
+The behavior that is captured in this simluation is inspired by the slime-mold algorithm defined in [this paper](https://uwe-repository.worktribe.com/output/980579). There are four key components in the implementation and one additional piece that was added by me for getting the MSOE logo graphic seen in the above screenshots:
+
+- *Sensory Stage*: Particles takes in the chemical trail to the left/right of the particle by an angle *SA* and in front of the particle. Particle then changes its trajectory based on the chemical trail it senses.
+
+- *Motor Stage* - If the particle can move to its next location (not occupied by another particle), advance to the location and deposit the chemical trail.
+
+    - *Food-Based Chemical Trail Deposits* - Inspired by how some animals take on different colors based on their diets (such as flamingos), the slime deposits chemical trails only when it has consumed food, and the chemical trails will take on different colors based on the "type" of food that was recently consumed by the particle.
+
+    - *Dead Zones* - On the `food` branch, there is usage of "deadzones" to limit slime particles from going to certain regions of the environment.
+
+- *Diffusion* - Uses a convoultion kernel (essentially a mean/blur filter) that distributes the chemical trail outward from its current location. This is essentially for getting slime particles to start creating more of a branching pattern when moving.
+
+- *Decay Chemoattractant* - Decays the chemical trail in the environment by a fixed amount per timestep.
+
+### Particle Kernels: Sensory Stage + Motor Stage
+
+Both tasks can be parallelized because the same operations occur for every slime particle. The main point of nuance for these kernels is that part of this algorithm includes that particles cannot move in the motor stage to already occupied cells. To address this, atomic operations are used to mark a cell as occupied. These atomic operations return the prior value of the location getting the atomic applied on it, which can be used as a way to check if the particle is trying to move to an occupied cell, even if there are race conditions for a cell. The first to access in a race condition is not important. The only thing that matters is tha one particle occupies a cell at a given time, which atomic operations solve.
+
+### Environment Kernels: Diffusion + Decay Chemoattractant
+
+Since both tasks involve the same operations being applied to every cell in the environment, these taks once again can be parallelized. The decay chemoattractant kernel is very simple, but for the diffusion kernel, since this is essentially convolution with a specific kind of filter, a tiled approach can be used. In my implementation, I create the tiled implementation of convolution using halo cells that are loaded into shared memory (different from my implementation for lab 5, which relied on cacheing of global memory for halo cells), which makes sense because the current implementation does not have many halo cells with a filter radius of 1.
+
+### CPU Implementation
+
+The CPU implementation can be found in `slime_cpu.cu` (doesn't need to be CUDA file). It generates frame pictures in a `frames` subdirectory (you may need to create it if this is your first time running the CPU version). It can be compiled with the following:
+
+```
+nvcc slime_cpu.cu -o slime_cpu
+```
+
+It can be run with command:
+
+```
+./slime_cpu <ENV_HEIGHT> <ENV_WIDTH> <PERCENT_PARTICLES>
+```
+
+The exectuable itself has the following arguments:
+
+- `<ENV_HEIGHT>` - integer for the height of the environment (default 1500)
+
+- `<ENV_WIDTH>` - integer for the width of the environment (default 2000)
+
+- `<PERCENT_PARTICLES>` - integer 0-100 for the percentage of slime particles(default 33)
+
+### GPU Implementation: Using OpenGL
+
+There are two older versions of CUDA C written for the GPU in `slime_gpu.cu` and `slime_gpu_gl.cu`, but the current version is in `slime_gpu_gl2.cu`. This implementation uses all the kernels described above, and it makes use of CUDA GL interop. You may need to packages `mesa-utils` and `freeglut3-dev` installed if you are running on your own PC for the first time. The OpenGL is used to create a window and define a `display()` function that is called for rendering each frame. This is used for performing the update steps in the slime simulation. 
 
 ## Running Code
 
@@ -87,7 +137,7 @@ An example of having food on the map for the particles to strive for, while also
 4. Run the following srun command:
 
     ```
-    srun -G 1 --x11 --export ALL prime-run ./slimeGL
+    srun -G 1 --x11 --export ALL --pty prime-run ./slimeGL <DISPLAY_MODE> <ENV_HEIGHT> <ENV_WIDTH> <PERCENT_PARTICLES>
     ```
 
      A little description of the arguments used here: 
@@ -96,9 +146,29 @@ An example of having food on the map for the particles to strive for, while also
 
      - `--x11` - allows X11 display forwarding from node back to source node
 
-     - `export ALL` - uses all environment variables from source node in the target node
+     - `--export ALL` - uses all environment variables from source node in the target node
+
+     - `--pty` - sends terminal output back to the shell
 
      - `prime-run ./slimeGL` - runs the `./slimeGL` executable with a series of presets to allow for correct NVIDIA graphics configuration
+
+     The exectuable itself has the following arguments:
+     
+     - `<DISPLAY_MODE>` - The type of run to do as an integer. The options with their numerical codes are:
+
+        - `BENCHMARK (0)` - benchmarking setup
+
+        - `DISPLAY_RANDOM (1)` - display setup with random particle initialization
+
+        - `DISPLAY_CIRCLE (2)` - display setup with circular pariticle intialization
+
+        - `DISPAY_MSOE (3)` - display setup with MSOE logo shape and food coloring
+
+     - `<ENV_HEIGHT>` - integer for the height of the environment (default 1500)
+
+     - `<ENV_WIDTH>` - integer for the width of the environment (default 2000)
+
+     - `<PERCENT_PARTICLES>` - integer 0-100 for the percentage of slime particles(default 33)
 
 ***Common Issues:***
 
@@ -118,6 +188,8 @@ An example of having food on the map for the particles to strive for, while also
 
 ### Running on Personal PC
 
+*Note:* You may need to packages `mesa-utils` and `freeglut3-dev` installed if you are running on your own PC for the first time.
+
 1. On a computer with the nvcc compiler installed and having the glut libraries installed for using OpenGL (should most likely be preinstalled with CUDA driver), you can run the following command to compile:
 
     ```
@@ -130,13 +202,32 @@ An example of having food on the map for the particles to strive for, while also
     prime-run ./slimeGL
     ```
 
-## Implementation
-
-TODO
 
 ## Benchmarking
 
-TODO
+To compare the CPU and GPU implementations, we evaluated 10 trials of the update steps for both implementations at 5 different image sizes. The number of particles was always 33% of the image size. With these benchmarks, there were four main kernels in the update steps. Two kernels (`diffusion` and `decay_chemoattractant`) were applied on the entire environment while the other two (`motor_stage_kernel` and `sensor_stage_kernel`) were applied on the array of particles. From the benchmark figure below, we can see that the CPU implementation of all kernels became slower than the GPU implementation as the envrionment size increased. The kernel that had the most latency difference was the diffusion kernel, which used a tiled kernel with shared memory to use the GPU very effectively.
+
+<img src="./assets/benchmarks.png">
+
+If we look at the speedup that we achieved with each of the kernels, we see that for the kernels applied to the entire environment (top row), the speedup increases with the size of the environment, but does start to plateau. For the particle-based kernels, we saw that the speedup had a peek point for a smaller environment, but then started to drop off before plateauing for larger environments.
+
+<img src="./assets/speedup.png">
+
+The one thing to note with the GPU implementation is that this implementation does have the display with OpenGL capabilties, which loads the display from GPU memory I believe, so this is a capability that goes beyond what the CPU implementation provides, allowing for a real-time video feed of the slime simulation.
+
+### Recreating the Benchmarks
+
+If you wish to recreate the benchmarks on ROSIE, you can do the following:
+
+```
+# setup for ROSIE (in the case that this hasn't been run before)
+source ./Setup_ROSIE.sh
+
+# runs the benchmarks
+source ./benchmarks.sh
+```
+
+Then, you should be able to run the notebook `results_benchmarks.ipynb` (you may have to change the `DIR` variable at the top of the notebook to get the right path relative to your current directory) to create the figures above.
 
 ## Future Work
 

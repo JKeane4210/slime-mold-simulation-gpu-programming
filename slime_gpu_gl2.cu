@@ -25,30 +25,30 @@
 // slime simulation kernels
 #include "slime_kernels.h"
 #include "utils.h"
-// #include "constant_definitions.h"
 
-// #define SAVE_FRAME_PPM
+// #define SAVE_FRAME_PPM          // if last frame should be saved off to assets/tmp.ppm
+#define BLOCK_SIZE_PARTICLE 256 // block size for particle kernels (could be improved for occupancy)
 
-#define BLOCK_SIZE_PARTICLE 256
-#define DEBUG_LEVEL 0
-#define HARD_FAIL false
+#define RA M_PI / 4        // = rotation angle
+#define SA M_PI / 4        // = sensor angle
+#define SO 9               // pixel(s) = sensor offset (original = 9)
+#define SW 1               // pixel(s) = sensor width
+#define SS 2               // pixel(s) = step size
+#define depT 20            // how much chemoattractant is deposited (original = 5)
+#define decayT 0.5         // decay rate of chemoattractant
+#define DISPLAY_WIDTH 600  // how big to make display for rendering (width)
+#define DISPLAY_HEIGHT 450 // how big to make display for rendering (height)
+#define REFRESH_DELAY 20   // ms
 
-#define RA M_PI / 4 // = rotation angle
-#define SA M_PI / 4 // = sensor angle
-#define SO 9        // pixel(s) = sensor offset (original = 9)
-#define SW 1        // pixel(s) = sensor width
-#define SS 2        // pixel(s) = step size
-#define depT 20     // how much chemoattractant is deposited (original = 5)
-#define decayT 0.5  // decay rate of chemoattractant
-#define ENV_WIDTH 2000
-#define ENV_HEIGHT 1500
-#define N_PARTICLES 1000000
-#define DISPLAY_WIDTH 600
-#define DISPLAY_HEIGHT 450
-#define REFRESH_DELAY 20 // ms
-
-const int DISPLAY = 0;
-const int BENCHMARK = 1;
+int PARTICLE_PERCENT = 33;
+int N_PARTICLES;
+int ENV_WIDTH = 2000;  // how big to make environment (width)
+int ENV_HEIGHT = 1500; // how big to make environment (height)
+const int BENCHMARK = 0;
+const int DISPLAY_RANDOM = 1;
+const int DISPLAY_CIRCLE = 2;
+const int DISPLAY_MSOE = 3;
+int mode = DISPLAY_MSOE;
 
 void display();
 void keyboard(unsigned char key, int /*x*/, int /*y*/);
@@ -77,7 +77,6 @@ float *tmp_d;
 float *food_d;
 float *food_pattern_h;
 float *food_pattern_d;
-// __constant__ float K[diffK][diffK];
 
 dim3 dg((ENV_WIDTH - 1) / BLOCK_SIZE + 1, (ENV_WIDTH - 1) / BLOCK_SIZE + 1, 1);
 dim3 db(BLOCK_SIZE, BLOCK_SIZE, 1);
@@ -146,22 +145,11 @@ void initGL(int *argc, char **argv)
     glutTimerFunc(REFRESH_DELAY, timerEvent, 0);
 }
 
-void initCuda()
+void initCuda(int mode)
 {
     // img
     HANDLE_ERROR(cudaMalloc((void **)&img_device, ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int)));
     HANDLE_ERROR(cudaMalloc((void **)&tmp_img_device, ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int)));
-
-    // kernel
-    // float * K_h = (float *)malloc(diffK * diffK * sizeof(float));
-    // for (int i = 0; i < diffK; ++i) {
-    //     for (int j = 0; j < diffK; ++j) {
-    //         K_h[i * diffK + j] = (i == DIFFUSION_KERNEL_R && j == DIFFUSION_KERNEL_R) ? MEAN_FILTER_CENTER_WEIGHT : (1.0 - MEAN_FILTER_CENTER_WEIGHT) / (diffK * diffK - 1);
-    //         printf("%f\n", K_h[i * diffK + j]);
-    //     }
-    // }
-    // HANDLE_ERROR(cudaMemcpyToSymbol(K, K_h, diffK * diffK * sizeof(float)));
-    // free(K_h);
 
     // occupied
     HANDLE_ERROR(cudaMalloc((void **)&occupied_d, ENV_WIDTH * ENV_HEIGHT * sizeof(int)));
@@ -179,37 +167,47 @@ void initCuda()
     HANDLE_ERROR(cudaMemset(food_d, 0, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
     food_pattern_h = (float *)malloc(N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float));
     int *occupied_h = (int *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(int));
-    unsigned char *food_pattern_unscaled_h;
-    unsigned int pattern_w;
-    unsigned int pattern_h;
-    sdkLoadPPM4<unsigned char>((const char *)"assets/MSOE.ppm", &food_pattern_unscaled_h, &pattern_w, &pattern_h);
-    memset(food_pattern_h, 0, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float));
-    memset(occupied_h, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(int));
-    int scale_factor = 6;
-    for (int i = 0; i < pattern_h * scale_factor; ++i)
+
+    if (mode == DISPLAY_MSOE)
     {
-        for (int j = 0; j < pattern_w * scale_factor; ++j)
+        unsigned char *food_pattern_unscaled_h;
+        unsigned int pattern_w;
+        unsigned int pattern_h;
+        sdkLoadPPM4<unsigned char>((const char *)"assets/MSOE.ppm", &food_pattern_unscaled_h, &pattern_w, &pattern_h);
+        memset(food_pattern_h, 0, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float));
+        memset(occupied_h, 0, ENV_WIDTH * ENV_HEIGHT * sizeof(int));
+        int scale_factor = 6;
+        for (int i = 0; i < pattern_h * scale_factor; ++i)
         {
-            int i_scaled = i / scale_factor;
-            int j_scaled = j / scale_factor;
-            int r = ENV_HEIGHT / 2 - pattern_h * scale_factor / 2 + i;
-            int c = ENV_WIDTH / 2 - pattern_w * scale_factor / 2 + j;
-            float value = (float)food_pattern_unscaled_h[((pattern_h - i_scaled) * pattern_w + j_scaled) * 4];
-            food_pattern_h[(r * ENV_WIDTH + c) * N_FOOD_TYPES] = (value > 128) ? 3 : -1;
-            food_pattern_h[(r * ENV_WIDTH + c) * N_FOOD_TYPES + 1] = (value < 128) ? 1 : -2;
-            // occupied_h[r * ENV_WIDTH + c] = value > 128 ? 0 : 1;
+            for (int j = 0; j < pattern_w * scale_factor; ++j)
+            {
+                int i_scaled = i / scale_factor;
+                int j_scaled = j / scale_factor;
+                int r = ENV_HEIGHT / 2 - pattern_h * scale_factor / 2 + i;
+                int c = ENV_WIDTH / 2 - pattern_w * scale_factor / 2 + j;
+                float value = (float)food_pattern_unscaled_h[((pattern_h - i_scaled) * pattern_w + j_scaled) * 4];
+                food_pattern_h[(r * ENV_WIDTH + c) * N_FOOD_TYPES] = (value > 128) ? 3 : -1;
+                food_pattern_h[(r * ENV_WIDTH + c) * N_FOOD_TYPES + 1] = (value < 128) ? 1 : -2;
+                // occupied_h[r * ENV_WIDTH + c] = value > 128 ? 0 : 1;
+            }
         }
+        HANDLE_ERROR(cudaMalloc((void **)&food_pattern_d, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
+        HANDLE_ERROR(cudaMemcpy(food_pattern_d, food_pattern_h, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float), cudaMemcpyHostToDevice));
+        HANDLE_ERROR(cudaMemcpy(occupied_d, occupied_h, ENV_WIDTH * ENV_HEIGHT * sizeof(int), cudaMemcpyHostToDevice));
+        add_food_kernel<<<dg, db>>>(food_d, food_pattern_d, ENV_WIDTH, ENV_HEIGHT);
     }
-    HANDLE_ERROR(cudaMalloc((void **)&food_pattern_d, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float)));
-    HANDLE_ERROR(cudaMemcpy(food_pattern_d, food_pattern_h, N_FOOD_TYPES * ENV_WIDTH * ENV_HEIGHT * sizeof(float), cudaMemcpyHostToDevice));
-    HANDLE_ERROR(cudaMemcpy(occupied_d, occupied_h, ENV_WIDTH * ENV_HEIGHT * sizeof(int), cudaMemcpyHostToDevice));
-    add_food_kernel<<<dg, db>>>(food_d, food_pattern_d, ENV_WIDTH, ENV_HEIGHT);
 
     // creating array of particles
     HANDLE_ERROR(cudaMalloc((void **)&particles_d, N_PARTICLES * sizeof(SlimeParticle)));
     printf("Dims: %d %d\n", (N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE);
-    init_circle_particle_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, occupied_d, ENV_WIDTH, ENV_HEIGHT);
-    // init_particle_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, occupied_d, ENV_WIDTH, ENV_HEIGHT);
+    if (mode == DISPLAY_CIRCLE || mode == DISPLAY_MSOE)
+    {
+        init_circle_particle_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, occupied_d, ENV_WIDTH, ENV_HEIGHT);
+    }
+    else if (mode == DISPLAY_RANDOM || mode == BENCHMARK)
+    {
+        init_particle_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, occupied_d, ENV_WIDTH, ENV_HEIGHT);
+    }
     HANDLE_ERROR(cudaPeekAtLastError());
     HANDLE_ERROR(cudaDeviceSynchronize());
 
@@ -240,6 +238,7 @@ void computeFPS()
     glutSetWindowTitle(fps);
 }
 
+// Key Function - Simulates the update step and renders the image
 void display()
 {
     sdkStartTimer(&timer);
@@ -247,6 +246,7 @@ void display()
     // execute filter, writing results to pbo
     unsigned int *d_result;
 
+    // get mapped pointer for result to render
     HANDLE_ERROR(cudaGraphicsMapResources(1, &cuda_pbo_resource, 0));
     size_t num_bytes;
     HANDLE_ERROR(cudaGraphicsResourceGetMappedPointer(
@@ -254,8 +254,9 @@ void display()
     // printf("Bytes accessible: %zu\n", num_bytes);
 
     // update step
+    const float BASE_FOOD = mode == DISPLAY_MSOE ? 0.0 : 1.0;
     sensor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SO);
-    motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SS, depT, deltaT);
+    motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SS, depT, deltaT, BASE_FOOD);
     diffusion_kernel<<<dg, db_diffusion>>>(env_d, env_dest_d, ENV_WIDTH, ENV_HEIGHT);
 
     // swap env_d and env_dest_d
@@ -267,13 +268,12 @@ void display()
 
     // HANDLE_ERROR(cudaDeviceSynchronize());
     HANDLE_ERROR(cudaPeekAtLastError());
-
     HANDLE_ERROR(cudaGraphicsUnmapResources(1, &cuda_pbo_resource, 0));
 
 #ifdef SAVE_FRAME_PPM
-    unsigned char *h_result;
-    cudaMemcpy((unsigned char *)h_result, (unsigned char *)d_result,
-               ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int), cudaMemcpyDeviceToHost);
+    unsigned int *h_result = (unsigned int *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int));
+    cudaMemcpy((unsigned char *)h_result, (unsigned char *)d_result, ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int), cudaMemcpyDeviceToHost);
+    HANDLE_ERROR(cudaMemcpy(h_result, d_result, ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int), cudaMemcpyDeviceToHost));
     sdkSavePPM4ub((const char *)"assets/tmp.ppm", (unsigned char *)h_result, ENV_WIDTH, ENV_HEIGHT);
 #endif
 
@@ -315,7 +315,6 @@ void display()
     sdkStopTimer(&timer);
 
     computeFPS();
-    // exit(0);
 }
 
 // shader for displaying floating-point texture
@@ -452,6 +451,7 @@ void cleanup()
     glDeleteProgramsARB(1, &shader);
 }
 
+// bencmarking tests
 void benchmark(int n_trials, int n_init_steps)
 {
     unsigned int *d_result;
@@ -465,7 +465,7 @@ void benchmark(int n_trials, int n_init_steps)
     for (int trial = 0; trial < n_init_steps; ++trial)
     {
         sensor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SO);
-        motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SS, depT, deltaT);
+        motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SS, depT, deltaT, 1.0);
         diffusion_kernel<<<dg, db_diffusion>>>(env_d, env_dest_d, ENV_WIDTH, ENV_HEIGHT);
 
         // swap env_d and env_dest_d
@@ -489,7 +489,7 @@ void benchmark(int n_trials, int n_init_steps)
 
         // motor stage
         cudaEventRecord(start); // insert the start event into the stream
-        motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SS, depT, deltaT);
+        motor_stage_kernel<<<(N_PARTICLES - 1) / BLOCK_SIZE_PARTICLE + 1, BLOCK_SIZE_PARTICLE>>>(particles_d, N_PARTICLES, env_d, food_d, occupied_d, ENV_WIDTH, ENV_HEIGHT, SA, RA, SS, depT, deltaT, 1.0);
         HANDLE_ERROR(cudaPeekAtLastError());
         cudaEventRecord(stop); // insert the stop event into the stream
         report_kernel_benchmark("motor_stage_kernel", start, stop);
@@ -515,8 +515,9 @@ void benchmark(int n_trials, int n_init_steps)
     }
     HANDLE_ERROR(cudaPeekAtLastError());
 
+    // saves last frame to assets/tmp.ppm to validate working qualitatively
     unsigned int *h_result = (unsigned int *)malloc(ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int));
-    HANDLE_ERROR(cudaMemcpy(h_result, d_result, 4 * ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned char), cudaMemcpyDeviceToHost));
+    HANDLE_ERROR(cudaMemcpy(h_result, d_result, ENV_WIDTH * ENV_HEIGHT * sizeof(unsigned int), cudaMemcpyDeviceToHost));
     for (int i = 0; i < ENV_HEIGHT / 2; ++i)
     {
         for (int j = 0; j < ENV_WIDTH; ++j)
@@ -533,24 +534,37 @@ void benchmark(int n_trials, int n_init_steps)
 
 int main(int argc, char *argv[])
 {
-    int mode = DISPLAY;
+    // parsing command line arguments
     if (argc > 1)
         mode = atoi(argv[1]);
-    printf("Mode: %s\n", mode == DISPLAY ? "DISPLAY" : "BENCHMARK");
+    if (argc > 2)
+        ENV_HEIGHT = atoi(argv[2]);
+    if (argc > 3)
+        ENV_WIDTH = atoi(argv[3]);
+    if (argc > 4)
+        PARTICLE_PERCENT = atoi(argv[4]);
+    N_PARTICLES = (int)((float)PARTICLE_PERCENT / 100.0 * (ENV_WIDTH * ENV_HEIGHT));
+    printf("# Particles: %d\n", N_PARTICLES);
+    printf("Mode: %s\n", mode > BENCHMARK ? "DISPLAY" : "BENCHMARK");
 
+    // need for setting up where to display to on Linux
 #if defined(__linux__)
     setenv("DISPLAY", ":0", 0);
 #endif
-    // findCudaDevice(argc, (const char **)argv);
-    initCuda();
-    if (mode == DISPLAY)
+
+    // intializing key arrays
+    findCudaDevice(argc, (const char **)argv);
+    initCuda(mode);
+
+    // display modes (else benchmark mode)
+    if (mode > BENCHMARK)
     {
         initGL(&argc, argv);
         initGLResources();
         glutCloseFunc(cleanup);
         glutMainLoop();
     }
-    else if (mode == BENCHMARK)
+    else
     {
         benchmark(10, 2000);
         cleanup();
