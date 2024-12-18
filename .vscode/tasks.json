@@ -4,7 +4,7 @@
         {
             "label": "sample",
             "type": "shell",
-            "command": "nvcc -g -G ~/Desktop/Projects/slime-mold-simulation-gpu-programming/slime_gpu.cu -o ~/build/final-project/slime_debug",
+            "command": "nvcc -g -G ~/source/slime-mold-simulation-gpu-programming/slime_gpu_gl2.cu slime_kernels.cu -L libs -o ~/source/slime-mold-simulation-gpu-programming/slime_debug -lGL -lGLU -lglut",
             "problemMatcher": ["$nvcc"],
             "group": {
                 "kind": "build",

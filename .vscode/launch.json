@@ -8,11 +8,8 @@
             "name": "CUDA C++: Launch",
             "type": "cuda-gdb",
             "request": "launch",
-            // "program": "~/Desktop/Projects/slime-mold-simulation-gpu-programming/test_slime",
-            "program": "~/build/final-project/slime_debug",
+            "program": "~/source/slime-mold-simulation-gpu-programming/slime_debug",
             "miDebuggerPath" : "/usr/bin/cuda-gdb"
         }
     ]
-    // Reminder: Run CMake from your lab-n subdirectory of the build folder: cmake ~/source/lab-n/.
-    // If successful then this should generate a Makefile
 }
